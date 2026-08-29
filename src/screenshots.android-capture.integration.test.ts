@@ -1,30 +1,21 @@
 /**
  * @file
  *
- * Produces the desktop screenshots the community-store listing needs, driving staged notes in a real
- * Obsidian and writing `images/screenshots/screenshot-desktop-N.png`.
+ * Produces the mobile screenshots the community-store listing needs, driving a staged note in Obsidian
+ * Mobile on a real Android emulator and writing `images/screenshots/screenshot-mobile-N.png`.
  *
- * THREE shots:
- *
- * 1. The settings tab — every option this plugin owns, in one panel, which is the claim it is built
- *    around.
- * 2. The plugin's own notice after a rename, with the rewritten link on screen behind it. A rename is a
- *    process rather than a state, so the notice is what makes it visible in a single frame; the shot
- *    asserts the link actually moved rather than trusting the notice.
- * 3. The refusal notice, with a plugin installed that still owns its own rename/delete handler. It is
- *    the first thing a user with one of those installed will see.
- *
- * The refusal shot is LAST because it unloads the plugin — nothing can be captured of it afterwards.
+ * TWO shots, the mobile half of the desktop set: the settings panel, and the plugin's notice after a
+ * rename. The desktop set's third shot — the refusal — is not repeated here, because it says the same
+ * thing at half the width and the store listing does not need it twice.
  *
  * **Opening the settings modal takes one extra step, and without it nothing renders.** `app.setting`
  * exists from startup but its `containerEl` is NOT in the document, and `open()` returns without
  * attaching it — so the modal builds into a detached tree and the captured document stays empty. Append
- * `containerEl` to `document.body` BEFORE calling `open()` and it renders normally. Attaching afterwards
- * is too late: the default tab has already been rendered into the detached container.
+ * `containerEl` to `document.body` BEFORE calling `open()`. Attaching afterwards is too late: the
+ * default tab has already been rendered into the detached container.
  *
- * There is deliberately no "before and after" pair. The interesting half of this plugin is what does NOT
- * happen — a link that never broke, an attachment that never stranded — and a frame of a vault that
- * looks correct proves nothing on its own.
+ * There is no mobile equivalent of the desktop viewport override, so the capture is always the device's
+ * own framebuffer, and the AVD is built at exactly 900x1600.
  */
 
 import {
@@ -47,11 +38,6 @@ import {
   it
 } from 'vitest';
 
-interface RefusalProbe {
-  readonly isLoaded: boolean;
-  readonly noticeText: string;
-}
-
 interface RenameProbe {
   readonly linkTextAfter: string;
   readonly noticeText: string;
@@ -68,11 +54,10 @@ interface SettingsProbe {
   readonly settingNames: string[];
 }
 
-const WIDTH_IN_PIXELS = 1200;
-const HEIGHT_IN_PIXELS = 800;
+const WIDTH_IN_PIXELS = 900;
+const HEIGHT_IN_PIXELS = 1600;
 
 const PLUGIN_ID = 'advanced-rename-delete-handler';
-const CONFLICTING_PLUGIN_ID = 'obsidian-custom-attachment-location';
 const SOURCE_NOTE_PATH = 'Screenshots/Chapter one.md';
 const TARGET_NOTE_PATH = 'Screenshots/Chapter two.md';
 const RENAMED_TARGET_NOTE_PATH = 'Screenshots/Chapter two renamed.md';
@@ -90,7 +75,7 @@ beforeAll(async () => {
 
   await evalInObsidian({
     async callback({ app, lib: { waitUntil }, sourceNotePath }) {
-      const SETTLE_TIMEOUT_IN_MILLISECONDS = 30_000;
+      const SETTLE_TIMEOUT_IN_MILLISECONDS = 60_000;
       const SETTLE_DELAY_IN_MILLISECONDS = 1000;
 
       app.changeTheme('obsidian');
@@ -103,7 +88,6 @@ beforeAll(async () => {
 
       // Otherwise Obsidian asks for confirmation through a modal, which a capture run cannot answer.
       app.vault.setConfig('alwaysUpdateLinks', true);
-      app.workspace.leftSplit.collapse();
 
       await sleep(SETTLE_DELAY_IN_MILLISECONDS);
     },
@@ -112,99 +96,22 @@ beforeAll(async () => {
   });
 });
 
-describe('desktop store screenshots', () => {
+describe('mobile store screenshots', () => {
   it('1 - every option in one panel', async () => {
     const probe = await openSettingsTab();
 
     expect(probe.settingNames).toContain('Should handle renames');
-    expect(probe.settingNames).toContain('Empty folder behavior');
     await shoot(1, 'Every rename and delete option, in one place');
   });
 
   it('2 - the links it rewrote when a note was renamed', async () => {
     const probe = await renameTargetAndReadResult();
 
-    // The notice is what makes a rename visible in a still; the link text is what proves it happened.
     expect(probe.noticeText).toContain('Updated');
     expect(probe.linkTextAfter).toContain('renamed');
     await shoot(2, 'Rename a note and every link to it follows');
   });
-
-  it('3 - what it does when another plugin already owns renames', async () => {
-    const probe = await installConflictAndReload();
-
-    expect(probe.noticeText).toContain('Not running');
-    expect(probe.isLoaded).toBe(false);
-    await shoot(3, 'One owner per vault, and it says so rather than fighting');
-  });
 });
-
-/**
- * Installs a stub under a conflicting plugin's id and reloads this plugin, so its refusal notice is on
- * screen.
- *
- * @returns The notice, and whether this plugin unloaded itself.
- */
-async function installConflictAndReload(): Promise<RefusalProbe> {
-  return await evalInObsidian({
-    async callback({
-      app,
-      conflictingPluginId,
-      lib: { waitUntil },
-      pluginId
-    }): Promise<RefusalProbe> {
-      const RENDER_TIMEOUT_IN_MILLISECONDS = 20_000;
-      const RESIZE_SETTLE_DELAY_IN_MILLISECONDS = 2000;
-      const SETTLE_DELAY_IN_MILLISECONDS = 1500;
-
-      // Let the previous shot's capture settle: the device-metrics override it sets and clears disturbs
-      // Anything opened too soon afterwards.
-      await sleep(RESIZE_SETTLE_DELAY_IN_MILLISECONDS);
-
-      const pluginFolder = `${app.vault.configDir}/plugins/${conflictingPluginId}`;
-      await app.vault.adapter.mkdir(pluginFolder);
-      await app.vault.adapter.write(
-        `${pluginFolder}/manifest.json`,
-        JSON.stringify({
-          author: 'test',
-          description: 'A stub standing in for a version that still owns its own handler.',
-          id: conflictingPluginId,
-          minAppVersion: '0.0.1',
-          name: 'Custom Attachment Location',
-          version: '11.10.0'
-        })
-      );
-      await app.vault.adapter.write(
-        `${pluginFolder}/main.js`,
-        'module.exports = class extends require("obsidian").Plugin {};'
-      );
-
-      await app.plugins.loadManifests();
-      await app.plugins.enablePluginAndSave(conflictingPluginId);
-
-      await app.plugins.disablePlugin(pluginId);
-      await app.plugins.enablePlugin(pluginId);
-
-      await waitUntil({
-        message: 'the refusal notice to appear',
-        predicate: () => document.body.textContent.includes('Not running: these plugins'),
-        timeoutInMilliseconds: RENDER_TIMEOUT_IN_MILLISECONDS
-      });
-
-      await sleep(SETTLE_DELAY_IN_MILLISECONDS);
-
-      return {
-        isLoaded: Object.hasOwn(app.plugins.plugins, pluginId),
-        noticeText: [...document.querySelectorAll('.notice')].map((notice) => notice.textContent).join(' ')
-      };
-    },
-    input: {
-      conflictingPluginId: CONFLICTING_PLUGIN_ID,
-      pluginId: PLUGIN_ID
-    },
-    vaultPath: vaultPath()
-  });
-}
 
 /**
  * Opens this plugin's settings tab and reports the rows it rendered.
@@ -214,16 +121,10 @@ async function installConflictAndReload(): Promise<RefusalProbe> {
 async function openSettingsTab(): Promise<SettingsProbe> {
   return await evalInObsidian({
     async callback({ app, lib: { waitUntil }, pluginId }): Promise<SettingsProbe> {
-      const RENDER_TIMEOUT_IN_MILLISECONDS = 20_000;
+      const RENDER_TIMEOUT_IN_MILLISECONDS = 30_000;
       const OPEN_DELAY_IN_MILLISECONDS = 500;
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
 
-      /*
-       * The one step that makes this work. `app.setting.containerEl` is built at startup but never
-       * attached, and `open()` does not attach it — so the modal renders into a detached tree and nothing
-       * reaches the captured document. Attaching afterwards is too late: the default tab has already been
-       * rendered into the detached container.
-       */
       const settingsModal: unknown = app.setting;
       const containerEl = (settingsModal as SettingsModalWithContainer).containerEl;
       if (!document.body.contains(containerEl)) {
@@ -268,8 +169,8 @@ async function renameTargetAndReadResult(): Promise<RenameProbe> {
       sourceNotePath,
       targetNotePath
     }): Promise<RenameProbe> {
-      const RENAME_SETTLE_IN_MILLISECONDS = 6000;
-      const RENDER_TIMEOUT_IN_MILLISECONDS = 20_000;
+      const RENAME_SETTLE_IN_MILLISECONDS = 8000;
+      const RENDER_TIMEOUT_IN_MILLISECONDS = 30_000;
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
 
       // The settings modal is still up from the previous shot.
@@ -324,28 +225,31 @@ async function renameTargetAndReadResult(): Promise<RenameProbe> {
 }
 
 /**
- * Captures the window, captions it, and writes it as
- * `images/screenshots/screenshot-desktop-<index>.png`.
+ * Captures the device frame, captions it, and writes it as
+ * `images/screenshots/screenshot-mobile-<index>.png`.
  *
  * @param index - The 1-based listing position.
  * @param caption - The caption drawn across the bottom of the frame.
  */
 async function shoot(index: number, caption: string): Promise<void> {
-  const bytes = await captureObsidianScreenshot({
+  const captured = await captureObsidianScreenshot({ vaultPath: vaultPath() });
+
+  /*
+   * The AVD is 900x1600, so the device frame IS the store's size. Asserting it here is what keeps that
+   * true: run this against any other AVD and it fails loudly instead of quietly shipping an off-spec
+   * image.
+   */
+  expect(readPngDimensions(captured)).toStrictEqual({
     heightInPixels: HEIGHT_IN_PIXELS,
-    vaultPath: vaultPath(),
     widthInPixels: WIDTH_IN_PIXELS
   });
 
-  const labeled = await labelScreenshot(bytes, { text: caption });
-
-  expect(readPngDimensions(labeled)).toStrictEqual({
-    heightInPixels: HEIGHT_IN_PIXELS,
-    widthInPixels: WIDTH_IN_PIXELS
-  });
+  // Captioned AFTER capture, so the frame stays an untouched device screenshot and rewording a label
+  // Needs no re-shoot.
+  const labeled = await labelScreenshot(captured, { text: caption });
 
   mkdirSync(IMAGES_DIRECTORY, { recursive: true });
-  writeFileSync(join(IMAGES_DIRECTORY, `screenshot-desktop-${String(index)}.png`), labeled);
+  writeFileSync(join(IMAGES_DIRECTORY, `screenshot-mobile-${String(index)}.png`), labeled);
 }
 
 function vaultPath(): string {

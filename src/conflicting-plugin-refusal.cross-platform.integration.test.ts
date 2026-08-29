@@ -16,7 +16,8 @@ import {
  * The intermediate state is reported rather than awaited, so a setup that did not take (the stub never
  * registering, say) fails as a readable expectation instead of an opaque timeout.
  *
- * Desktop-only: no Android emulator is provisioned in this environment.
+ * Cross-platform: a conflicting plugin is just as installable on a phone, and the manifest declares
+ * `isDesktopOnly: false`.
  */
 
 const PLUGIN_ID = 'advanced-rename-delete-handler';

@@ -13,8 +13,8 @@ import {
  * harness, so it is raced against a timeout and the observable effect is polled instead — the same shape
  * the rename suites in the sibling plugins use.
  *
- * Desktop-only: no Android emulator is provisioned in this environment. The behavior is cross-platform,
- * so renaming this file to `*.cross-platform.integration.test.ts` lifts it to Android once one exists.
+ * Cross-platform: the manifest declares `isDesktopOnly: false`, and renaming a note has to hold on a
+ * phone as much as on a desktop, so the file name puts it in both projects (G47).
  */
 
 interface RenameLinkUpdateResult {
