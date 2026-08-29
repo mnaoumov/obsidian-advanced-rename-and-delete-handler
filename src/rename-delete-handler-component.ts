@@ -99,6 +99,8 @@ import {
   relative
 } from 'obsidian-dev-utils/path';
 
+import { pluralize } from './pluralize.ts';
+
 /**
  * Parameters for {@link RenameDeleteHandlerSettings.getRescuePath}.
  */
@@ -1047,7 +1049,7 @@ class RenameHandler {
           if (renamedLinks.size === 0) {
             return;
           }
-          pluginNoticeComponent.showNotice(`Updated ${renamedLinks.size.toLocaleString()} links in ${renamedFilePaths.size.toLocaleString()} files.`);
+          pluginNoticeComponent.showNotice(`Updated ${pluralize(renamedLinks.size, 'link')} in ${pluralize(renamedFilePaths.size, 'file')}.`);
           renamedFilePaths.clear();
           renamedLinks.clear();
         },
