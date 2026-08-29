@@ -33,10 +33,6 @@ describe('PluginSettings', () => {
       expect(settings.emptyFolderBehavior).toBe(EmptyFolderBehavior.Keep);
     });
 
-    it('should not have migrated legacy settings', () => {
-      expect(new PluginSettings().hasMigratedLegacySettings).toBe(false);
-    });
-
     it('should treat .excalidraw.md as an attachment', () => {
       expect(new PluginSettings().treatAsAttachmentExtensions).toEqual(['.excalidraw.md']);
     });

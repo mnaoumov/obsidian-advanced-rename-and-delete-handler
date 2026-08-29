@@ -10,14 +10,6 @@ export class PluginSettings {
   public emptyFolderBehavior: EmptyFolderBehavior = EmptyFolderBehavior.Keep;
 
   /**
-   * Whether the one-shot import of the settings the consumer plugins used to own has already run.
-   *
-   * Not shown in the settings tab: it records that a migration happened, and re-running it would
-   * overwrite whatever the user has changed since.
-   */
-  public hasMigratedLegacySettings = false;
-
-  /**
    * The note-priority list that decides which surviving note adopts an attachment a deletion would
    * otherwise strand. Empty means the user has expressed no preference, and a tie is left unresolved.
    */

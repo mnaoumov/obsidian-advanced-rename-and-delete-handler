@@ -5,11 +5,9 @@ import { PluginBase } from 'obsidian-dev-utils/obsidian/plugin/plugin';
 import { PluginEventSourceImpl } from 'obsidian-dev-utils/obsidian/plugin/plugin-event-source';
 
 import type { InstalledConflict } from './conflicting-plugins.ts';
-import type { PluginSettingsComponent } from './plugin-settings-component.ts';
 import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
 
 import { findInstalledConflicts } from './conflicting-plugins.ts';
-import { migrateLegacySettings } from './legacy-settings-migrator.ts';
 import { PluginSettingsComponent as PluginSettingsComponentImpl } from './plugin-settings-component.ts';
 import { PluginSettingsTab } from './plugin-settings-tab.ts';
 import { RenameDeleteHandlerComponent } from './rename-delete-handler-component.ts';
@@ -46,8 +44,6 @@ export class Plugin extends PluginBase {
         })
       })
     );
-
-    await this.migrateLegacySettings(pluginSettingsComponent);
 
     const rescuePathResolver = new RescuePathResolver({
       app: this.app,
@@ -87,35 +83,6 @@ export class Plugin extends PluginBase {
         pluginVersion: this.manifest.version
       })
     ]);
-  }
-
-  /**
-   * Imports the rename/delete settings the consumer plugins used to own, once.
-   *
-   * Runs before the handler is registered, so the very first rename after installing this plugin already
-   * behaves the way the user's existing configuration said it should.
-   *
-   * @param pluginSettingsComponent - This plugin's settings component.
-   * @returns A {@link Promise} that resolves once any import has been saved.
-   */
-  private async migrateLegacySettings(pluginSettingsComponent: PluginSettingsComponent): Promise<void> {
-    if (pluginSettingsComponent.settings.hasMigratedLegacySettings) {
-      return;
-    }
-
-    let importedFromPluginIds: readonly string[] = [];
-    await pluginSettingsComponent.editAndSave(async (settings) => {
-      settings.hasMigratedLegacySettings = true;
-      ({ importedFromPluginIds } = await migrateLegacySettings(this.app, settings));
-    });
-
-    if (importedFromPluginIds.length === 0) {
-      return;
-    }
-
-    this.pluginNoticeComponent.showNotice(
-      `Imported rename/delete settings from ${importedFromPluginIds.length.toString()} plugin(s): ${importedFromPluginIds.join(', ')}.`
-    );
   }
 
   /**

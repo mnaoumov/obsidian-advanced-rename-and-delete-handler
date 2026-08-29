@@ -86,12 +86,12 @@ describe('PluginSettingsTab', () => {
     expect(Object.values(addedOptions[0] ?? {})).toEqual(['Keep', 'Delete', 'Delete with empty parents']);
   });
 
-  it('should not expose the migration bookkeeping flag', () => {
+  it('should expose no setting the plugin does not own', () => {
     const tab = createTab();
 
     renderRows(tab);
 
-    expect(boundKeys()).not.toContain('hasMigratedLegacySettings');
+    expect(boundKeys()).toHaveLength(EXPECTED_PROPERTY_NAMES.length);
   });
 });
 

@@ -44,14 +44,10 @@ interface RenameDeleteHandlerComponentParams {
 }
 
 const {
-  initialSettingsOverrides,
   mockFindInstalledConflicts,
-  mockMigrateLegacySettings,
   renameDeleteHandlerStub
 } = vi.hoisted(() => ({
-  initialSettingsOverrides: { hasMigratedLegacySettings: false },
   mockFindInstalledConflicts: vi.fn(),
-  mockMigrateLegacySettings: vi.fn(),
   renameDeleteHandlerStub: vi.fn<(params: RenameDeleteHandlerComponentParams) => object>()
 }));
 
@@ -61,7 +57,7 @@ vi.mock('./plugin-settings-component.ts', async () => {
   const { Component } = await vi.importActual<ComponentModuleActual>('obsidian');
   const { PluginSettings } = await vi.importActual<typeof import('./plugin-settings.ts')>('./plugin-settings.ts');
   class PluginSettingsComponent extends Component {
-    public settings = Object.assign(new PluginSettings(), initialSettingsOverrides);
+    public settings = new PluginSettings();
 
     public editAndSave(editor: (settings: unknown) => unknown): Promise<void> {
       return Promise.resolve(editor(this.settings)).then(() => undefined);
@@ -80,10 +76,6 @@ vi.mock('./plugin-settings-tab.ts', () => ({
 
 vi.mock('./conflicting-plugins.ts', () => ({
   findInstalledConflicts: mockFindInstalledConflicts
-}));
-
-vi.mock('./legacy-settings-migrator.ts', () => ({
-  migrateLegacySettings: mockMigrateLegacySettings
 }));
 
 vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
@@ -124,9 +116,7 @@ const CONFLICT: InstalledConflict = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  initialSettingsOverrides.hasMigratedLegacySettings = false;
   mockFindInstalledConflicts.mockReturnValue([]);
-  mockMigrateLegacySettings.mockResolvedValue({ importedFromPluginIds: [] });
 });
 
 function createConfiguredApp(): App {
@@ -231,42 +221,6 @@ describe('Plugin', () => {
     });
   });
 
-  describe('legacy settings migration', () => {
-    it('should migrate once and record that it did', async () => {
-      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
-      const addChildSpy = vi.spyOn(plugin, 'addChild');
-
-      await plugin.onload();
-
-      expect(mockMigrateLegacySettings).toHaveBeenCalledOnce();
-      const settingsComponent = castTo<PluginSettingsComponent>(
-        addChildSpy.mock.calls.map((call) => call[0]).find((child) => child instanceof PluginSettingsComponent)
-      );
-      expect(settingsComponent.settings.hasMigratedLegacySettings).toBe(true);
-      plugin.unload();
-    });
-
-    it('should not migrate again once it already has', async () => {
-      initialSettingsOverrides.hasMigratedLegacySettings = true;
-      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
-
-      await plugin.onload();
-
-      expect(mockMigrateLegacySettings).not.toHaveBeenCalled();
-      plugin.unload();
-    });
-
-    it('should report which plugins it imported from', async () => {
-      mockMigrateLegacySettings.mockResolvedValue({ importedFromPluginIds: ['obsidian-custom-attachment-location'] });
-      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
-
-      await plugin.onload();
-
-      expect(mockMigrateLegacySettings).toHaveBeenCalledOnce();
-      plugin.unload();
-    });
-  });
-
   describe('with a conflicting plugin installed', () => {
     beforeEach(() => {
       mockFindInstalledConflicts.mockReturnValue([CONFLICT]);
@@ -288,15 +242,6 @@ describe('Plugin', () => {
       await plugin.onload();
 
       expect(renameDeleteHandlerStub).not.toHaveBeenCalled();
-      plugin.unload();
-    });
-
-    it('should not migrate settings it is not going to use', async () => {
-      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
-
-      await plugin.onload();
-
-      expect(mockMigrateLegacySettings).not.toHaveBeenCalled();
       plugin.unload();
     });
 
