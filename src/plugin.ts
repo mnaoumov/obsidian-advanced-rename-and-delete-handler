@@ -94,7 +94,6 @@ export class Plugin extends PluginBase {
    * after doing what the notice asked.
    *
    * @param conflicts - The conflicting plugins found installed.
-   * @returns A {@link Promise} that resolves once this plugin is disabled.
    */
   private async refuseToRun(conflicts: readonly InstalledConflict[]): Promise<void> {
     const fragment = createFragment((f) => {
