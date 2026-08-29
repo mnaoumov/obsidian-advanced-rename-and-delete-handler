@@ -51,10 +51,7 @@ import {
 } from 'obsidian-dev-utils/obsidian/attachment-path';
 import { getCanvasReferences } from 'obsidian-dev-utils/obsidian/canvas';
 import { ComponentEx } from 'obsidian-dev-utils/obsidian/components/component-ex';
-import {
-  hasPatchToken,
-  MonkeyAroundComponent
-} from 'obsidian-dev-utils/obsidian/components/monkey-around-component';
+import { MonkeyAroundComponent } from 'obsidian-dev-utils/obsidian/components/monkey-around-component';
 import { waitForPendingLinkUpdates } from 'obsidian-dev-utils/obsidian/file-manager';
 import {
   CANVAS_FILE_EXTENSION,
@@ -176,6 +173,34 @@ export interface RenameDeleteHandlerSettings {
   shouldUpdateFileNameAliases: boolean;
 }
 
+interface DeleteHandlerConstructorParams {
+  readonly abortSignal: AbortSignal;
+  readonly app: App;
+  readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
+  readonly file: TAbstractFile;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly settingsManager: SettingsManager;
+}
+
+interface DeleteProtectionPatchComponentConstructorParams {
+  readonly app: App;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly settingsManager: SettingsManager;
+}
+
+interface DidRescueStillUsedAttachmentParams {
+  readonly app: App;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly rescueParams: RescueStillUsedFileParams;
+  readonly settingsManager: SettingsManager;
+}
+
+interface FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams {
+  readonly app: App;
+  readonly fileManager: FileManager;
+  readonly settingsManager: SettingsManager;
+}
+
 interface HandledRenameKey {
   newPath: string;
   oldPath: string;
@@ -184,6 +209,23 @@ interface HandledRenameKey {
 interface InterruptedRename {
   combinedBacklinksMap: Map<string, Map<string, string>>;
   oldPath: string;
+}
+
+interface MetadataDeletedHandlerConstructorParams {
+  readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
+  readonly file: TAbstractFile;
+  readonly previousCache: CachedMetadata | null;
+  readonly settingsManager: SettingsManager;
+}
+
+interface RenameDeleteHandlerComponentConstructorParams {
+  readonly abortSignalComponent: AbortSignalComponent;
+  readonly app: App;
+  readonly linkUpdateProgressReporter?: LinkUpdateProgressReporter;
+  readonly pluginId: string;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly resourceLockComponent: null | ResourceLockComponent;
+  settingsBuilder(this: void): Partial<RenameDeleteHandlerSettings>;
 }
 
 interface RenameHandlerConstructorParams {
@@ -226,53 +268,6 @@ interface RenameMapInitBacklinksMapParams {
    * The backlinks map for a single file, keyed by backlink path.
    */
   readonly singleBacklinksMap: Map<string, Reference[]>;
-}
-
-const PATCH_TOKEN = Symbol.for('renameDeleteHandler');
-
-interface DeleteHandlerConstructorParams {
-  readonly abortSignal: AbortSignal;
-  readonly app: App;
-  readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
-  readonly file: TAbstractFile;
-  readonly pluginNoticeComponent: PluginNoticeComponent;
-  readonly settingsManager: SettingsManager;
-}
-
-interface DeleteProtectionPatchComponentConstructorParams {
-  readonly app: App;
-  readonly pluginNoticeComponent: PluginNoticeComponent;
-  readonly settingsManager: SettingsManager;
-}
-
-interface DidRescueStillUsedAttachmentParams {
-  readonly app: App;
-  readonly pluginNoticeComponent: PluginNoticeComponent;
-  readonly rescueParams: RescueStillUsedFileParams;
-  readonly settingsManager: SettingsManager;
-}
-
-interface FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams {
-  readonly app: App;
-  readonly fileManager: FileManager;
-  readonly settingsManager: SettingsManager;
-}
-
-interface MetadataDeletedHandlerConstructorParams {
-  readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
-  readonly file: TAbstractFile;
-  readonly previousCache: CachedMetadata | null;
-  readonly settingsManager: SettingsManager;
-}
-
-interface RenameDeleteHandlerComponentConstructorParams {
-  readonly abortSignalComponent: AbortSignalComponent;
-  readonly app: App;
-  readonly linkUpdateProgressReporter?: LinkUpdateProgressReporter;
-  readonly pluginId: string;
-  readonly pluginNoticeComponent: PluginNoticeComponent;
-  readonly resourceLockComponent: null | ResourceLockComponent;
-  settingsBuilder(this: void): Partial<RenameDeleteHandlerSettings>;
 }
 
 /**
@@ -686,15 +681,9 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
       $object: this.fileManager,
       methodName: 'runAsyncLinkUpdate',
       patchHandler: ({
-        fallback,
         originalArguments: [linkUpdatesHandler],
-        originalMethod,
         originalMethodBound
       }) => {
-        if (hasPatchToken(originalMethod, PATCH_TOKEN)) {
-          return fallback();
-        }
-
         const newHandler: LinkUpdatesHandler = (linkUpdates) => this.wrapLinkUpdatesHandler(linkUpdates, linkUpdatesHandler);
         return originalMethodBound(newHandler);
       }
