@@ -1,0 +1,78 @@
+# Advanced Rename/Delete Handler
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/mnaoumov) [![GitHub release](https://img.shields.io/github/v/release/mnaoumov/obsidian-advanced-rename-delete-handler)](https://github.com/mnaoumov/obsidian-advanced-rename-delete-handler/releases) [![GitHub downloads](https://img.shields.io/github/downloads/mnaoumov/obsidian-advanced-rename-delete-handler/total)](https://github.com/mnaoumov/obsidian-advanced-rename-delete-handler/releases) [![Coverage: 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/mnaoumov/obsidian-advanced-rename-delete-handler)
+
+[Obsidian](https://obsidian.md/) updates the links pointing at a note when you rename it, and stops there. The images you pasted into that note stay behind under the old name. Deleting the note leaves them behind entirely, referenced by nothing, in a folder named after something that no longer exists.
+
+This plugin takes over renaming and deleting for the whole vault: links follow the note, the files it owns travel with it, and what a deletion leaves behind is cleaned up on terms you choose.
+
+**It is the single owner of that behavior in a vault.** Several plugins used to carry their own copy of this handler, and two handlers acting on one rename corrupt links between them. Rather than compete, this plugin checks on load and refuses to run while a plugin that still owns its own handler is installed, naming the ones to update; once they are, it starts on its own.
+
+## Demo vault
+
+**The documentation is a demo vault.** Every feature has a note that explains what it does and why you would want it, with buttons that perform the rename or the deletion and then print the vault as a tree, so you see the effect rather than read a description of it.
+
+**[Start reading here](<./demo-vault/00 Start.md>)** — it is plain markdown, so it works on GitHub with nothing installed.
+
+A copy of the vault ships with every release. You can access it via any of the following:
+
+1. Running the **Advanced Rename/Delete Handler: Open demo vault** command.
+2. Downloading `advanced-rename-delete-handler-demo-vault-<version>.zip` (`<version>` is the release version) from the [Releases](https://github.com/mnaoumov/obsidian-advanced-rename-delete-handler/releases).
+3. Browsing its source in [`demo-vault/`](./demo-vault/README.md) in this repository.
+
+## What it does
+
+- **Links follow a renamed or moved note**, including the display text of a link that was showing the old file name — while a link somebody gave their own words to is left alone. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
+- **Attachments travel with the note that owns them**, folder and all, when it is renamed or moved to another folder. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
+- **Deleting a note can clean up after it** — the attachments only that note used, and the folder the deletion leaves empty. Off by default, because each option removes something. [02 Deleting a note](<./demo-vault/02 Deleting a note.md>)
+- **An attachment two notes share is never deleted with one of them**, and can be moved to the note that still uses it rather than left in a folder belonging to a note that is gone. [03 Shared attachments](<./demo-vault/03 Shared attachments.md>)
+- **A drawing stored as `.excalidraw.md` is treated as an attachment, not a note**, along with any other ending you add. [04 What counts as a note](<./demo-vault/04 What counts as a note.md>)
+- **The plugin can be confined to part of the vault** with include and exclude path lists. [05 Limiting the scope](<./demo-vault/05 Limiting the scope.md>)
+
+## Installation
+
+The plugin is not yet listed in [the official Community Plugins repository](https://community.obsidian.md/plugins). Until it is, install it as a beta release.
+
+### Beta versions
+
+To install the latest beta release of this plugin (regardless if it is available in [the official Community Plugins repository](https://community.obsidian.md) or not), follow these steps:
+
+1. Ensure you have the [BRAT plugin](https://community.obsidian.md/plugins/obsidian42-brat) installed and enabled.
+2. Click [Install via BRAT](https://intradeus.github.io/http-protocol-redirector?r=obsidian://brat?plugin=https://github.com/mnaoumov/obsidian-advanced-rename-delete-handler).
+3. An Obsidian pop-up window should appear. In the window, click the `Add plugin` button once and wait a few seconds for the plugin to install.
+
+## Debugging
+
+By default, debug messages for this plugin are hidden.
+
+To show them, run the following command:
+
+```js
+window.DEBUG.enable('advanced-rename-delete-handler');
+```
+
+For more details, refer to the [documentation](https://mnaoumov.dev/obsidian-dev-utils/guides/debugging/).
+
+## Changelog
+
+All notable changes to this project will be documented in the [CHANGELOG](./CHANGELOG.md).
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING](./CONTRIBUTING.md) to get set up.
+
+## Support
+
+<!-- markdownlint-disable MD033 -->
+
+<a href="https://www.buymeacoffee.com/mnaoumov" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" width="217"></a>
+
+<!-- markdownlint-enable MD033 -->
+
+## My other Obsidian resources
+
+[See my other Obsidian resources](https://github.com/mnaoumov/obsidian-resources).
+
+## License
+
+© [Michael Naumov](https://github.com/mnaoumov/)
