@@ -148,6 +148,18 @@ describe('Plugin', () => {
       plugin.unload();
     });
 
+    it('should expose its API once it has loaded', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+
+      // Nothing to call before the plugin has loaded — and nothing published either.
+      expect(plugin.api).toBeNull();
+
+      await plugin.onload();
+
+      expect(plugin.api).not.toBeNull();
+      plugin.unload();
+    });
+
     it('should construct the rename/delete handler', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
 

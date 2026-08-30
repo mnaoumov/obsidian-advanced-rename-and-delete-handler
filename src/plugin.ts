@@ -2,18 +2,40 @@ import { OpenDemoVaultCommandHandler } from 'obsidian-dev-utils/obsidian/command
 import { PluginSettingsTabComponent } from 'obsidian-dev-utils/obsidian/components/plugin-settings-tab-component';
 import { PluginDataHandler } from 'obsidian-dev-utils/obsidian/data-handler';
 import { PluginBase } from 'obsidian-dev-utils/obsidian/plugin/plugin';
+import { publishPluginApi } from 'obsidian-dev-utils/obsidian/plugin/plugin-api';
 import { PluginEventSourceImpl } from 'obsidian-dev-utils/obsidian/plugin/plugin-event-source';
 
 import type { InstalledConflict } from './conflicting-plugins.ts';
+import type { AdvancedRenameAndDeleteHandlerApi } from './plugin-api.ts';
 import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
 
 import { findInstalledConflicts } from './conflicting-plugins.ts';
+import { PluginApiImpl } from './plugin-api-impl.ts';
+import {
+  PLUGIN_API_CONTRACT,
+  PLUGIN_API_VERSION
+} from './plugin-api.ts';
 import { PluginSettingsComponent as PluginSettingsComponentImpl } from './plugin-settings-component.ts';
 import { PluginSettingsTab } from './plugin-settings-tab.ts';
 import { RenameDeleteHandlerComponent } from './rename-delete-handler-component.ts';
 import { RescuePathResolver } from './rescue-path-resolver.ts';
 
 export class Plugin extends PluginBase {
+  /**
+   * This plugin's public API, or `null` before it has loaded — or when it refused to run because a
+   * conflicting plugin is installed.
+   *
+   * The registry — `watchPluginApi` from `obsidian-dev-utils` — is the path a consumer should take: it
+   * negotiates the contract version, waits out the load order and revokes the handle when this plugin
+   * unloads. This field is the plain fallback for a consumer that cannot depend on a library version new
+   * enough to have the registry.
+   */
+  public get api(): AdvancedRenameAndDeleteHandlerApi | null {
+    return this.pluginApi;
+  }
+
+  private pluginApi: null | PluginApiImpl = null;
+
   protected override async onloadImpl(): Promise<void> {
     /*
      * Before anything else, and before anything that awaits. A plugin that still owns a rename/delete
@@ -44,6 +66,17 @@ export class Plugin extends PluginBase {
         })
       })
     );
+
+    this.pluginApi = new PluginApiImpl({
+      app: this.app,
+      pluginSettingsComponent
+    });
+    publishPluginApi({
+      api: this.pluginApi,
+      apiVersion: PLUGIN_API_VERSION,
+      contract: PLUGIN_API_CONTRACT,
+      plugin: this
+    });
 
     const rescuePathResolver = new RescuePathResolver({
       app: this.app,
