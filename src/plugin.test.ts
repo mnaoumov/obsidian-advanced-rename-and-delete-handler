@@ -99,9 +99,9 @@ import { Plugin } from './plugin.ts';
 const PLUGIN_MANIFEST: PluginManifest = {
   author: 'test',
   description: 'test',
-  id: 'advanced-rename-delete-handler',
+  id: 'advanced-rename-and-delete-handler',
   minAppVersion: '1.0.0',
-  name: 'Advanced Rename/Delete Handler',
+  name: 'Advanced Rename and Delete Handler',
   version: '1.0.0'
 };
 

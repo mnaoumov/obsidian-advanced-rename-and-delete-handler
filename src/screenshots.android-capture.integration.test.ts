@@ -57,7 +57,7 @@ interface SettingsProbe {
 const WIDTH_IN_PIXELS = 900;
 const HEIGHT_IN_PIXELS = 1600;
 
-const PLUGIN_ID = 'advanced-rename-delete-handler';
+const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const SOURCE_NOTE_PATH = 'Screenshots/Chapter one.md';
 const TARGET_NOTE_PATH = 'Screenshots/Chapter two.md';
 const RENAMED_TARGET_NOTE_PATH = 'Screenshots/Chapter two renamed.md';

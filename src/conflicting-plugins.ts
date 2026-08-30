@@ -59,7 +59,7 @@ export interface InstalledConflict {
 }
 
 /*
- * TODO: [[T646-P21]] — the minimum versions are the NEXT major of each plugin, chosen because dropping a
+ * TODO: [[T646-P40]] — the minimum versions are the NEXT major of each plugin, chosen because dropping a
  * plugin's own rename/delete settings is a breaking change for it. None of these releases exists yet.
  * Pin each one to its real version as that plugin ships, and drop the entry entirely once the version
  * that still conflicts is old enough to have aged out.

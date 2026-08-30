@@ -20,7 +20,7 @@ import {
  * `isDesktopOnly: false`.
  */
 
-const PLUGIN_ID = 'advanced-rename-delete-handler';
+const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const CONFLICTING_PLUGIN_ID = 'obsidian-custom-attachment-location';
 const CONFLICTING_PLUGIN_VERSION = '11.10.0';
 

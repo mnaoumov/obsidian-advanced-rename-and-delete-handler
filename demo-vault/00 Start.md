@@ -1,6 +1,6 @@
 # Start here
 
-Welcome to the [Advanced Rename/Delete Handler](https://github.com/mnaoumov/obsidian-advanced-rename-delete-handler/) demo vault. Renaming a note in Obsidian updates the links pointing at it, but stops there: the attachments that belonged to that note stay where they were, and deleting a note leaves its attachments behind as orphans. This plugin takes over renaming and deleting for the whole vault, so files travel with the note they belong to and nothing is left stranded.
+Welcome to the [Advanced Rename and Delete Handler](https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/) demo vault. Renaming a note in Obsidian updates the links pointing at it, but stops there: the attachments that belonged to that note stay where they were, and deleting a note leaves its attachments behind as orphans. This plugin takes over renaming and deleting for the whole vault, so files travel with the note they belong to and nothing is left stranded.
 
 **Your first success:** the grey rectangle below with a caption on it is a **code button**. **Clicking it runs the code it contains**, and the result appears underneath it. The `</>` toggle beside the caption reveals the source, so you can always read what a button is about to do before you press it. Press this one — it prints the vault as it stands right now, and every other page uses the same button to show you what changed.
 

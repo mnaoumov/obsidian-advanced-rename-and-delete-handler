@@ -8,6 +8,6 @@
 # runtime). Nothing helper-related is committed; commit only the baked settings
 # file for the plugin under test.
 .obsidian/plugins/*
-!.obsidian/plugins/advanced-rename-delete-handler/
-.obsidian/plugins/advanced-rename-delete-handler/*
-!.obsidian/plugins/advanced-rename-delete-handler/data.json
+!.obsidian/plugins/advanced-rename-and-delete-handler/
+.obsidian/plugins/advanced-rename-and-delete-handler/*
+!.obsidian/plugins/advanced-rename-and-delete-handler/data.json

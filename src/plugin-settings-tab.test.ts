@@ -118,7 +118,7 @@ function createMockSettingsComponent(): PluginSettingsComponentBase<PluginSettin
 function createTab(): PluginSettingsTab {
   const plugin = strictProxy<Plugin>({
     app,
-    manifest: { id: 'advanced-rename-delete-handler' }
+    manifest: { id: 'advanced-rename-and-delete-handler' }
   });
   return new PluginSettingsTab({
     plugin,

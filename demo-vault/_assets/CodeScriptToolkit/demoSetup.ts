@@ -9,7 +9,7 @@ import {
 } from 'obsidian';
 import { configureCommunityPlugin } from 'obsidian-dev-utils/obsidian/community-plugins';
 
-const PLUGIN_ID = 'advanced-rename-delete-handler';
+const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 
 const TARGET_PATH = 'Notes/Target note.md';
 const RENAMED_TARGET_PATH = 'Notes/Target note renamed.md';
@@ -35,8 +35,8 @@ interface DemoSettingsPatch {
 /**
  * Applies a settings patch, live, through the plugin's own settings component.
  *
- * Manual equivalent: change the same option in **Settings -> Community plugins -> Advanced
- * Rename/Delete Handler**.
+ * Manual equivalent: change the same option in **Settings -> Community plugins -> Advanced Rename and
+ * Delete Handler**.
  *
  * @param app - The Obsidian app.
  * @param patch - The settings to change.
