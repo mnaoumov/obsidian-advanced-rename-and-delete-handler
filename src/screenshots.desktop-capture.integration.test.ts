@@ -71,7 +71,7 @@ interface SettingsProbe {
 const WIDTH_IN_PIXELS = 1200;
 const HEIGHT_IN_PIXELS = 800;
 
-const PLUGIN_ID = 'advanced-rename-delete-handler';
+const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const CONFLICTING_PLUGIN_ID = 'obsidian-custom-attachment-location';
 const SOURCE_NOTE_PATH = 'Screenshots/Chapter one.md';
 const TARGET_NOTE_PATH = 'Screenshots/Chapter two.md';

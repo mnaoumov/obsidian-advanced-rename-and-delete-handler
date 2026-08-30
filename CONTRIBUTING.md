@@ -10,8 +10,8 @@ Contributions are welcome! Here's how to get started.
 ## Setup
 
 ```bash
-git clone https://github.com/mnaoumov/obsidian-advanced-rename-delete-handler.git
-cd obsidian-advanced-rename-delete-handler
+git clone https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler.git
+cd obsidian-advanced-rename-and-delete-handler
 npm install
 ```
 

@@ -1,6 +1,6 @@
 {
-  "id": "advanced-rename-delete-handler",
-  "name": "Advanced Rename/Delete Handler",
+  "id": "advanced-rename-and-delete-handler",
+  "name": "Advanced Rename and Delete Handler",
   "version": "0.0.0",
   "description": "Handles renames and deletes for the whole vault in one place: updates links, moves attachment files and folders, and cleans up what a deletion leaves behind.",
   "author": "mnaoumov",
