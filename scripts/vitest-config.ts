@@ -89,5 +89,28 @@ export const config = defineObsidianPluginVitestConfig({
         }
       }
     ];
+  },
+
+  /*
+   * Seeds `obsidian-dev-utils`' integration-test harness plugin alongside the plugin under test, so an
+   * `evalInObsidian` closure reaches the whole library surface as `lib.<helper>` — `lib.lockResourceForPath`
+   * and `lib.flushQueue` among them, which the suppression suites need to stage a foreign locked
+   * transaction and to drain the handler's queue. Without it `lib` carries only the harness's own helpers.
+   *
+   * `integration-test-vitest-global-setup` REPLACES `obsidian-integration-testing/vitest-global-setup-plugin`
+   * (it does everything that one does, plus the seeding) — listing both would create the vault twice.
+   *
+   * Edited here rather than per project because the context members are live: `customProjects` runs after
+   * this and spreads `context.desktop` / `context.android`, so the capture projects inherit the same wiring.
+   * `integration-tests:demo-vault` keeps its own `globalSetup`, which populates the demo vault instead.
+   */
+  editContext(context: ObsidianPluginVitestConfigContext): void {
+    for (const project of [context.android, context.desktop, context.desktopPerformance]) {
+      project.globalSetup = ['obsidian-dev-utils/integration-test-vitest-global-setup'];
+      project.setupFiles = [
+        'obsidian-integration-testing/vitest-setup',
+        'obsidian-dev-utils/integration-test-setup'
+      ];
+    }
   }
 });
