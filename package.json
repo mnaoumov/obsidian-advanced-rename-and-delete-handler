@@ -1,6 +1,6 @@
 {
   "name": "advanced-rename-and-delete-handler",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Handles renames and deletes for the whole vault in one place: updates links, moves attachment files and folders, and cleans up what a deletion leaves behind.",
   "keywords": [],
   "homepage": "https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler#readme",
