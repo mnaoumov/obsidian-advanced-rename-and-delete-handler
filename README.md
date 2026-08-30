@@ -47,6 +47,44 @@ A copy of the vault ships with every release. You can access it via any of the f
 - **A drawing stored as `.excalidraw.md` is treated as an attachment, not a note**, along with any other ending you add. [04 What counts as a note](<./demo-vault/04 What counts as a note.md>)
 - **The plugin can be confined to part of the vault** with include and exclude path lists. [05 Limiting the scope](<./demo-vault/05 Limiting the scope.md>)
 
+## For plugin developers: handing your settings over
+
+A plugin that used to handle renames and deletions itself, and no longer does, can propose the settings it held so a vault keeps behaving the way it did. This plugin owns those settings, so it owns the dialog too: your proposal is shown next to the current values, and the user approves, edits or declines it row by row. Nothing is written unless they press OK.
+
+The API is published through the `obsidian-dev-utils` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first.
+
+```ts
+import { watchPluginApi } from 'obsidian-dev-utils/obsidian/plugin/plugin-api';
+
+const ref = watchPluginApi<AdvancedRenameAndDeleteHandlerApi>({
+  apiVersionRange: '^1',
+  app: this.app,
+  component: this,
+  pluginId: 'advanced-rename-and-delete-handler'
+});
+
+const api = await ref.whenAvailable();
+const result = await api.migrateSettings({
+  proposedSettings: {
+    shouldHandleRenames: true,
+    treatAsAttachmentExtensions: ['.excalidraw.md']
+  },
+  sourcePluginId: this.manifest.id
+});
+
+if (result.isApplied) {
+  // Record your own one-shot flag, so the offer is not repeated.
+}
+```
+
+- **`proposedSettings`** names only what you held. Every member is optional, and a proposal that matches what this plugin already holds is dropped rather than shown, so a user is never asked about a row that would change nothing.
+- **`result.isApplied`** is `false` when the user cancelled and nothing was written — do NOT record your migration as done in that case. It is `true` when they approved, and also when the proposal changed nothing and no dialog was needed.
+- **The call resolves only once the dialog is closed**, so awaiting it is how you learn the answer. Two plugins proposing at once are queued, never stacked.
+- **A value of the wrong type is refused** rather than written, so a mistake surfaces as an error instead of a corrupted `data.json`.
+- The settings you may propose are `emptyFolderBehavior`, `excludePaths`, `includePaths`, `notePriorities`, `shouldDeleteConflictingAttachments`, `shouldHandleDeletions`, `shouldHandleRenames`, `shouldRenameAttachmentFiles`, `shouldRenameAttachmentFolder`, `shouldRescueSharedAttachments`, `shouldUpdateFileNameAliases` and `treatAsAttachmentExtensions`.
+- The contract version is `1.0.0` and moves independently of the plugin's own version. Ask for `'^1'`.
+- If you cannot depend on a library version that has the registry, the same object is on the plugin instance as `app.plugins.plugins['advanced-rename-and-delete-handler']?.api` — untyped, and `null` until this plugin has loaded.
+
 ## Installation
 
 The plugin is not yet listed in [the official Community Plugins repository](https://community.obsidian.md/plugins). Until it is, install it as a beta release.
