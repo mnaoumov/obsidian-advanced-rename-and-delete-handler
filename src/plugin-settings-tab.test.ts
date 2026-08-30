@@ -1,6 +1,9 @@
 import type {
   App as AppOriginal,
   Plugin,
+  SettingDefinition,
+  SettingDefinitionGroup,
+  SettingDefinitionItem,
   SettingGroup
 } from 'obsidian';
 import type { PluginSettingsComponentBase } from 'obsidian-dev-utils/obsidian/components/plugin-settings-component';
@@ -37,6 +40,12 @@ const EXPECTED_PROPERTY_NAMES = [
   'excludePaths'
 ];
 
+const EXPECTED_HEADINGS = [
+  'Renames and moves',
+  'Deletions',
+  'Scope'
+];
+
 let app: AppOriginal;
 
 beforeEach(() => {
@@ -54,8 +63,24 @@ describe('PluginSettingsTab', () => {
     expect(boundKeys()).toEqual(EXPECTED_PROPERTY_NAMES);
   });
 
-  it('should lead with the setting that turns the plugin on', () => {
-    expect(settingNames(createTab())[0]).toBe('Should handle renames');
+  it('should group the rows under the three headings', () => {
+    expect(headings(createTab())).toEqual(EXPECTED_HEADINGS);
+  });
+
+  it('should put every row inside a group, leaving none loose at the top level', () => {
+    for (const item of createTab().getSettingDefinitions()) {
+      expect(item).toHaveProperty('items');
+    }
+  });
+
+  it('should lead each group with the switch that turns its behavior on', () => {
+    const tab = createTab();
+
+    expect(firstRowNamePerGroup(tab)).toEqual([
+      'Should handle renames',
+      'Should handle deletions',
+      'Treat as attachment extensions'
+    ]);
   });
 
   it('should give every row a name', () => {
@@ -77,7 +102,7 @@ describe('PluginSettingsTab', () => {
       return setting;
     });
 
-    const definition = tab.getSettingDefinitions().find((item) => 'name' in item && item.name === 'Empty folder behavior');
+    const definition = flattenRows(tab.getSettingDefinitions()).find((row) => row.name === 'Empty folder behavior');
     if (!definition || !('render' in definition)) {
       throw new Error('The empty-folder row is missing.');
     }
@@ -127,25 +152,89 @@ function createTab(): PluginSettingsTab {
 }
 
 /**
- * Invokes every declared row's `render` callback the way Obsidian does when the tab is opened, so the
- * bindings are still exercised now that the rows are declarative.
+ * Reads the name of the first row of each group, which is the switch the rest of that group depends on.
+ *
+ * @param tab - The settings tab.
+ * @returns The names, one per group.
+ */
+function firstRowNamePerGroup(tab: PluginSettingsTab): string[] {
+  return groups(tab).map((group) => flattenRows(castTo<SettingDefinitionItem[]>(group.items ?? []))[0]?.name ?? '');
+}
+
+/**
+ * Flattens declared items into leaf rows, descending into groups and sub-pages alike.
+ *
+ * Both a group and a page carry their children in `items`, so the walk has to recurse.
+ *
+ * @param items - The declared items.
+ * @returns The leaf rows.
+ */
+function flattenRows(items: SettingDefinitionItem[]): SettingDefinition[] {
+  const rows: SettingDefinition[] = [];
+  for (const item of items) {
+    if ('items' in item) {
+      rows.push(...flattenRows(castTo<SettingDefinitionItem[]>(item.items ?? [])));
+      continue;
+    }
+
+    rows.push(castTo<SettingDefinition>(item));
+  }
+
+  return rows;
+}
+
+/**
+ * Reads the group definitions of the tab.
+ *
+ * @param tab - The settings tab.
+ * @returns The groups.
+ */
+function groups(tab: PluginSettingsTab): SettingDefinitionGroup[] {
+  return tab.getSettingDefinitions().filter((item) => 'items' in item).map((item) => castTo<SettingDefinitionGroup>(item));
+}
+
+/**
+ * Reads the group headings, in the order they are declared.
+ *
+ * @param tab - The settings tab.
+ * @returns The headings.
+ */
+function headings(tab: PluginSettingsTab): string[] {
+  return groups(tab).map((group) => group.heading ?? '');
+}
+
+/**
+ * Renders the declared rows the way Obsidian does when the tab is opened: it descends into the groups,
+ * applies the name and description, and runs each row's `render` callback.
+ *
+ * No row in this tab declares a `visible` or `disabled` predicate, so the predicate-evaluating half of
+ * G101's reference renderer is deliberately absent — it would be a branch no test can take, against a
+ * 100% coverage gate. Add it back the moment a row grows a predicate.
  *
  * @param tab - The settings tab.
  */
 function renderRows(tab: PluginSettingsTab): void {
-  for (const definition of tab.getSettingDefinitions()) {
-    if ('render' in definition) {
-      definition.render(new SettingEx(tab.containerEl), castTo<SettingGroup>(null));
+  for (const row of flattenRows(tab.getSettingDefinitions())) {
+    if (!('render' in row)) {
+      continue;
     }
+
+    const setting = new SettingEx(tab.containerEl);
+    setting.setName(row.name);
+    if (row.desc) {
+      setting.setDesc(row.desc);
+    }
+
+    row.render(setting, castTo<SettingGroup>(null));
   }
 }
 
 /**
- * Reads the names of the declared rows.
+ * Reads the names of the declared rows, descending into the groups.
  *
  * @param tab - The settings tab.
  * @returns The names.
  */
 function settingNames(tab: PluginSettingsTab): string[] {
-  return tab.getSettingDefinitions().map((definition) => 'name' in definition ? definition.name : '');
+  return flattenRows(tab.getSettingDefinitions()).map((row) => row.name);
 }
