@@ -35,7 +35,7 @@ This plugin takes over renaming and deleting for the whole vault: links follow t
 A copy of the vault ships with every release. You can access it via any of the following:
 
 1. Running the **Advanced Rename and Delete Handler: Open demo vault** command.
-2. Downloading `advanced-rename-and-delete-handler-demo-vault-<version>.zip` (`<version>` is the release version) from the [Releases](https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/releases).
+2. Downloading `advanced-rename-and-delete-handler-demo-vault.zip` from the [Releases](https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/releases). It unzips into a single `advanced-rename-and-delete-handler-demo-vault-<version>` folder.
 3. Browsing its source in [`demo-vault/`](./demo-vault/README.md) in this repository.
 
 ## What it does
