@@ -13,6 +13,10 @@ import {
  *
  * See https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/47.
  *
+ * The first case also carries the phantom-registration assertion from the issue-#47 suite
+ * `obsidian-custom-attachment-location` handed over — that suite drove this same combination and asserted
+ * this same rewrite, so the mechanism was folded in here rather than landed as a second copy of it.
+ *
  * Ported from `obsidian-dev-utils`' own suite for the reason set out in
  * `foreign-lock-non-interference.cross-platform.integration.test.ts`: this plugin ships a FORK of
  * `rename-delete-handler-component.ts`, so the library's copy of this test guards different code. Each case
@@ -25,6 +29,10 @@ import {
 
 const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const SOURCE_PLUGIN_ID = 'obsidian-custom-attachment-location';
+
+interface AttachmentRenameResult extends NativeLinkUpdateResult {
+  readonly isOldAttachmentPathReregistered: boolean;
+}
 
 interface MigratableSettingsLike {
   readonly shouldHandleRenames?: boolean;
@@ -64,12 +72,14 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
         },
         pluginId,
         sourcePluginId
-      }): Promise<NativeLinkUpdateResult> {
+      }): Promise<AttachmentRenameResult> {
         const FOLDER = 'rdh-attachment-rename';
         const NOTE = `${FOLDER}/note.md`;
         const OLD_ATTACHMENT = `${FOLDER}/attachments/img.png`;
         const NEW_ATTACHMENT = `${FOLDER}/attachments/renamed.png`;
         const WAIT_TIMEOUT_IN_MILLISECONDS = 30_000;
+        // Short enough to catch the phantom window below, which is only open across a couple of awaits.
+        const PHANTOM_SAMPLE_INTERVAL_IN_MILLISECONDS = 5;
 
         const plugin = app.plugins.plugins[pluginId];
         if (!plugin) {
@@ -165,16 +175,43 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
             throw new Error(`Attachment ${OLD_ATTACHMENT} not found.`);
           }
 
-          await app.fileManager.renameFile(attachment, NEW_ATTACHMENT);
-          // Obsidian's link update and the handler's own queued work both settle after the rename resolves.
-          await flushQueue();
-          await waitUntil({
-            message: 'renamed attachment indexed by the metadata cache',
-            predicate: () => app.vault.getAbstractFileByPath(NEW_ATTACHMENT) !== null,
-            timeoutInMilliseconds: WAIT_TIMEOUT_IN_MILLISECONDS
-          });
+          /*
+           * The MECHANISM behind the issue, sampled while the rename runs: once the attachment has landed at
+           * its new path, the OLD path must never reappear in `vault.fileMap`. Obsidian snapshots each link's
+           * resolved paths before a rename and rewrites only those that resolve differently afterwards, so a
+           * phantom file re-registered at the old path makes it conclude "unchanged" and skip the rewrite —
+           * and nobody updates the link. The window is only open across a couple of awaits, which a short
+           * sampling interval is enough to catch.
+           */
+          let isOldAttachmentPathReregistered = false;
+          const phantomSampleIntervalId = window.setInterval(() => {
+            // Only meaningful once the rename has landed; before that the old path legitimately exists.
+            if (!app.vault.getAbstractFileByPath(NEW_ATTACHMENT)) {
+              return;
+            }
 
-          return { referencingNoteContent: await app.vault.read(note) };
+            if (Object.hasOwn(app.vault.fileMap, OLD_ATTACHMENT)) {
+              isOldAttachmentPathReregistered = true;
+            }
+          }, PHANTOM_SAMPLE_INTERVAL_IN_MILLISECONDS);
+
+          try {
+            await app.fileManager.renameFile(attachment, NEW_ATTACHMENT);
+            // Obsidian's link update and the handler's own queued work both settle after the rename resolves.
+            await flushQueue();
+            await waitUntil({
+              message: 'renamed attachment indexed by the metadata cache',
+              predicate: () => app.vault.getAbstractFileByPath(NEW_ATTACHMENT) !== null,
+              timeoutInMilliseconds: WAIT_TIMEOUT_IN_MILLISECONDS
+            });
+          } finally {
+            window.clearInterval(phantomSampleIntervalId);
+          }
+
+          return {
+            isOldAttachmentPathReregistered,
+            referencingNoteContent: await app.vault.read(note)
+          };
         } finally {
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
@@ -198,6 +235,13 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
         sourcePluginId: SOURCE_PLUGIN_ID
       }
     });
+
+    /*
+     * The mechanism, ported with the regression suites the owning plugin handed over: once the rename has
+     * landed, nothing may re-register the OLD path, or Obsidian's post-rename check still resolves it,
+     * concludes the link needs no rewrite, and leaves it pointing at a file that is no longer there.
+     */
+    expect(result.isOldAttachmentPathReregistered).toBe(false);
 
     expect(result.referencingNoteContent).toContain('renamed.png');
     expect(result.referencingNoteContent).not.toContain('img.png');
