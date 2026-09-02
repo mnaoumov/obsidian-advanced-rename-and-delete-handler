@@ -13,7 +13,10 @@ import type { ReadonlyPluginSettings } from 'obsidian-dev-utils/obsidian/compone
 import { isDeepEqual } from 'obsidian-dev-utils/object-utils';
 import { assertNever } from 'obsidian-dev-utils/type-guards';
 
-import type { MigratableSettings } from './plugin-api.ts';
+import type {
+  HandedOverSettings,
+  MigratableSettings
+} from './plugin-api.ts';
 import type { PluginSettings } from './plugin-settings.ts';
 
 import { EmptyFolderBehavior } from './rename-delete-handler-component.ts';
@@ -76,20 +79,11 @@ export interface MigratableSettingDescriptor {
 
 /**
  * The name of a setting a consumer may propose.
+ *
+ * Derived from {@link HandedOverSettings} rather than spelled out again, so this list cannot fall out of
+ * step with the one the API publishes.
  */
-export type MigratableSettingPropertyName =
-  | 'emptyFolderBehavior'
-  | 'excludePaths'
-  | 'includePaths'
-  | 'notePriorities'
-  | 'shouldDeleteConflictingAttachments'
-  | 'shouldHandleDeletions'
-  | 'shouldHandleRenames'
-  | 'shouldRenameAttachmentFiles'
-  | 'shouldRenameAttachmentFolder'
-  | 'shouldRescueSharedAttachments'
-  | 'shouldUpdateFileNameAliases'
-  | 'treatAsAttachmentExtensions';
+export type MigratableSettingPropertyName = keyof HandedOverSettings;
 
 /**
  * A value any migratable setting may hold.
