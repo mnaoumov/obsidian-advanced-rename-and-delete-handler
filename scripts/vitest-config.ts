@@ -54,6 +54,21 @@ const DEMO_VAULT_TEST_FILES = 'src/**/*.demo-vault.integration.test.ts';
  */
 const DEMO_VAULT_TIMEOUT_IN_MILLISECONDS = 600_000;
 
+/**
+ * The desktop transport's per-command budget.
+ *
+ * A whole `evalInObsidian` callback is ONE `Runtime.evaluate`, so this bounds the entire staging + waiting +
+ * assertion sequence a suite runs inside Obsidian, not a single round trip. The transport's own default is
+ * 30s, which silently truncates any suite that raises its per-test budget to do real work — the note-move
+ * suites move thirty attachments and then wait for the rewrite to settle. Those were killed at 30s by the
+ * transport while vitest was still waiting, and reported as `CDP command timed out ... Runtime.evaluate`,
+ * naming neither the `waitUntil` that was pending nor the assertion that never ran.
+ *
+ * Set above the largest per-test budget in the suite, so the overrun is always reported by vitest, which
+ * knows what was being awaited. Nothing hangs longer for it: vitest's own timeout is the backstop.
+ */
+const CDP_COMMAND_TIMEOUT_IN_MILLISECONDS = 240_000;
+
 export const config = defineObsidianPluginVitestConfig({
   customProjects(context: ObsidianPluginVitestConfigContext): TestProjectConfiguration[] {
     return [
@@ -116,6 +131,19 @@ export const config = defineObsidianPluginVitestConfig({
         'obsidian-dev-utils/integration-test-setup'
       ];
     }
+
+    /*
+     * Merged rather than assigned: the context seeds `obsidianTransport.obsidianVersion` here when the
+     * `OBSIDIAN_VERSION` environment variable is set, and overwriting the object would drop the pin.
+     */
+    context.desktop.environmentOptions = {
+      ...context.desktop.environmentOptions,
+      obsidianTransport: {
+        ...context.desktop.environmentOptions?.['obsidianTransport'] as Record<string, unknown> | undefined,
+        commandTimeoutInMilliseconds: CDP_COMMAND_TIMEOUT_IN_MILLISECONDS,
+        type: 'obsidian-cdp'
+      }
+    };
 
     context.desktopPerformance.globalSetup = ['./scripts/vitest-global-setup-performance.ts'];
   }
