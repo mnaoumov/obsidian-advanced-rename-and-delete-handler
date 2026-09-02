@@ -102,7 +102,11 @@ export const config = defineObsidianPluginVitestConfig({
    *
    * Edited here rather than per project because the context members are live: `customProjects` runs after
    * this and spreads `context.desktop` / `context.android`, so the capture projects inherit the same wiring.
-   * `integration-tests:demo-vault` keeps its own `globalSetup`, which populates the demo vault instead.
+   *
+   * The two projects that bring their own `populate` keep their own `globalSetup`, which composes
+   * `getIntegrationTestPluginPopulate()` in by hand instead: `integration-tests:demo-vault` populates the
+   * demo vault, `integration-tests:desktop-performance` the two bulk-delete folders and the seeded
+   * `shouldHandleDeletions`. Their `setupFiles` are still the shared pair.
    */
   editContext(context: ObsidianPluginVitestConfigContext): void {
     for (const project of [context.android, context.desktop, context.desktopPerformance]) {
@@ -112,5 +116,7 @@ export const config = defineObsidianPluginVitestConfig({
         'obsidian-dev-utils/integration-test-setup'
       ];
     }
+
+    context.desktopPerformance.globalSetup = ['./scripts/vitest-global-setup-performance.ts'];
   }
 });
