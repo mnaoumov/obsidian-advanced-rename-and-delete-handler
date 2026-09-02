@@ -270,40 +270,6 @@ interface RenameMapInitBacklinksMapParams {
   readonly singleBacklinksMap: Map<string, Reference[]>;
 }
 
-/**
- * Resolves the settings the handler runs with.
- *
- * There is exactly one contributor — this plugin — which is the whole point of the plugin existing. The
- * version of this code that lived in `obsidian-dev-utils` had to aggregate a registry of contributors and
- * OR-merge their answers, because every consumer plugin brought its own; here that registry is gone, and
- * so is any question of whose setting wins.
- *
- * What remains is defaulting: the builder returns a `Partial`, so the two predicates and the empty-folder
- * behavior need a value when it does not supply one.
- */
-class SettingsManager {
-  private readonly settingsBuilder: () => Partial<RenameDeleteHandlerSettings>;
-
-  public constructor(settingsBuilder: () => Partial<RenameDeleteHandlerSettings>) {
-    this.settingsBuilder = settingsBuilder;
-  }
-
-  public getSettings(): Partial<RenameDeleteHandlerSettings> {
-    const builtSettings = this.settingsBuilder();
-    return {
-      ...builtSettings,
-      emptyFolderBehavior: builtSettings.emptyFolderBehavior ?? EmptyFolderBehavior.Keep,
-      isNote: (path: string): boolean => builtSettings.isNote?.(path) ?? isNote(path),
-      isPathIgnored: (path: string): boolean => builtSettings.isPathIgnored?.(path) ?? false
-    };
-  }
-
-  public isNoteEx(path: string): boolean {
-    const settings = this.getSettings();
-    return settings.isNote?.(path) ?? false;
-  }
-}
-
 class DeleteHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
@@ -1332,6 +1298,40 @@ class RenameMap {
       context: AttachmentPathContext.RenameNote,
       notePathOrFile: this.oldPath
     });
+  }
+}
+
+/**
+ * Resolves the settings the handler runs with.
+ *
+ * There is exactly one contributor — this plugin — which is the whole point of the plugin existing. The
+ * version of this code that lived in `obsidian-dev-utils` had to aggregate a registry of contributors and
+ * OR-merge their answers, because every consumer plugin brought its own; here that registry is gone, and
+ * so is any question of whose setting wins.
+ *
+ * What remains is defaulting: the builder returns a `Partial`, so the two predicates and the empty-folder
+ * behavior need a value when it does not supply one.
+ */
+class SettingsManager {
+  private readonly settingsBuilder: () => Partial<RenameDeleteHandlerSettings>;
+
+  public constructor(settingsBuilder: () => Partial<RenameDeleteHandlerSettings>) {
+    this.settingsBuilder = settingsBuilder;
+  }
+
+  public getSettings(): Partial<RenameDeleteHandlerSettings> {
+    const builtSettings = this.settingsBuilder();
+    return {
+      ...builtSettings,
+      emptyFolderBehavior: builtSettings.emptyFolderBehavior ?? EmptyFolderBehavior.Keep,
+      isNote: (path: string): boolean => builtSettings.isNote?.(path) ?? isNote(path),
+      isPathIgnored: (path: string): boolean => builtSettings.isPathIgnored?.(path) ?? false
+    };
+  }
+
+  public isNoteEx(path: string): boolean {
+    const settings = this.getSettings();
+    return settings.isNote?.(path) ?? false;
   }
 }
 
