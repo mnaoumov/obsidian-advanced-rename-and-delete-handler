@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.2.0
+
+- chore(deps): sweep onto obsidian-dev-utils 98, integration-testing 12 and test-mocks 5
+- test(rename-delete): adopt the regression suites the attachment plugin hands over
+- test(bulk-delete): port OCAAL's performance suite onto the handler that owns the cost
+- test(rename-delete-handler): land the runAsyncLinkUpdate suppression guards
+- feat(api): read the handed-over settings back, at contract 1.1.0
+- fix(build): wire build:compile to buildCompile and drop the duplicate leaf script
+
 ## 1.1.1
 
 - chore(deps): sweep caret-ranged dependencies to latest
