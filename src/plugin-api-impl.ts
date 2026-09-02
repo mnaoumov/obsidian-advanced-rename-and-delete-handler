@@ -16,6 +16,7 @@ import {
 
 import type {
   AdvancedRenameAndDeleteHandlerApi,
+  HandedOverSettings,
   MigrateSettingsParams,
   MigrateSettingsResult
 } from './plugin-api.ts';
@@ -58,6 +59,55 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
   public constructor(params: PluginApiImplConstructorParams) {
     this.app = params.app;
     this.pluginSettingsComponent = params.pluginSettingsComponent;
+  }
+
+  /**
+   * The settings this plugin holds right now, as plain data.
+   *
+   * @returns The current values.
+   */
+  public getSettings(): HandedOverSettings {
+    const settings = this.pluginSettingsComponent.settings;
+    return {
+      emptyFolderBehavior: settings.emptyFolderBehavior,
+      /*
+       * Copies, not the arrays themselves: `excludePaths` and `includePaths` are getters onto the live
+       * `PathSettings` arrays, so handing them over raw would let a consumer edit this plugin's settings by
+       * pushing to what it was given. It is also what keeps the returned object plain data, which is all the
+       * registry is willing to carry between two plugins' library copies.
+       */
+      excludePaths: [...settings.excludePaths],
+      includePaths: [...settings.includePaths],
+      notePriorities: [...settings.notePriorities],
+      shouldDeleteConflictingAttachments: settings.shouldDeleteConflictingAttachments,
+      shouldHandleDeletions: settings.shouldHandleDeletions,
+      shouldHandleRenames: settings.shouldHandleRenames,
+      shouldRenameAttachmentFiles: settings.shouldRenameAttachmentFiles,
+      shouldRenameAttachmentFolder: settings.shouldRenameAttachmentFolder,
+      shouldRescueSharedAttachments: settings.shouldRescueSharedAttachments,
+      shouldUpdateFileNameAliases: settings.shouldUpdateFileNameAliases,
+      treatAsAttachmentExtensions: [...settings.treatAsAttachmentExtensions]
+    };
+  }
+
+  /**
+   * Whether this plugin leaves the path alone entirely, per its include and exclude lists.
+   *
+   * @param path - The path to test, from the vault root.
+   * @returns `true` when the path is ignored.
+   */
+  public isPathIgnored(path: string): boolean {
+    return this.pluginSettingsComponent.settings.isPathIgnored(path);
+  }
+
+  /**
+   * Whether the path names an attachment even though its extension says otherwise.
+   *
+   * @param path - The path to test, from the vault root.
+   * @returns `true` when the path is treated as an attachment.
+   */
+  public isTreatedAsAttachment(path: string): boolean {
+    return this.pluginSettingsComponent.settings.isTreatedAsAttachment(path);
   }
 
   /**

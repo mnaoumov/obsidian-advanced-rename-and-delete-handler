@@ -20,6 +20,7 @@ import type { SettingsMigrationRow } from './settings-migration.ts';
 
 import { PluginApiImpl } from './plugin-api-impl.ts';
 import { PluginSettings } from './plugin-settings.ts';
+import { EmptyFolderBehavior } from './rename-delete-handler-component.ts';
 import { showSettingsMigrationModal } from './settings-migration-modal.ts';
 
 vi.mock('./settings-migration-modal.ts', () => ({
@@ -166,5 +167,99 @@ describe('PluginApiImpl.migrateSettings', () => {
     await Promise.all([firstMigration, secondMigration]);
 
     expect(openDialogs).toEqual(['first-plugin', 'second-plugin']);
+  });
+});
+
+describe('PluginApiImpl.getSettings', () => {
+  it('hands back what this plugin currently holds', () => {
+    expect(createPluginApi(createApp({})).getSettings()).toEqual({
+      emptyFolderBehavior: EmptyFolderBehavior.Keep,
+      excludePaths: [],
+      includePaths: [],
+      notePriorities: [],
+      shouldDeleteConflictingAttachments: false,
+      shouldHandleDeletions: false,
+      shouldHandleRenames: true,
+      shouldRenameAttachmentFiles: false,
+      shouldRenameAttachmentFolder: true,
+      shouldRescueSharedAttachments: false,
+      shouldUpdateFileNameAliases: true,
+      treatAsAttachmentExtensions: ['.excalidraw.md']
+    });
+  });
+
+  it('reads live, so a consumer that holds the API sees a later edit', () => {
+    const pluginApi = createPluginApi(createApp({}));
+    expect(pluginApi.getSettings().shouldHandleDeletions).toBe(false);
+
+    settings.shouldHandleDeletions = true;
+    settings.notePriorities = ['Index.md'];
+
+    expect(pluginApi.getSettings().shouldHandleDeletions).toBe(true);
+    expect(pluginApi.getSettings().notePriorities).toEqual(['Index.md']);
+  });
+
+  it('hands back copies of the arrays, so a consumer cannot edit these settings through them', () => {
+    settings.excludePaths = ['Archive'];
+    const pluginApi = createPluginApi(createApp({}));
+    const handedOver = pluginApi.getSettings();
+
+    expect(handedOver.excludePaths).not.toBe(settings.excludePaths);
+
+    castTo<string[]>(handedOver.excludePaths).push('Templates');
+    castTo<string[]>(handedOver.treatAsAttachmentExtensions).push('.foo.md');
+
+    expect(settings.excludePaths).toEqual(['Archive']);
+    expect(settings.treatAsAttachmentExtensions).toEqual(['.excalidraw.md']);
+    expect(pluginApi.getSettings().excludePaths).toEqual(['Archive']);
+  });
+});
+
+describe('PluginApiImpl.isPathIgnored', () => {
+  it('ignores nothing while both lists are empty', () => {
+    expect(createPluginApi(createApp({})).isPathIgnored('Notes/Note.md')).toBe(false);
+  });
+
+  it('honours an excluded folder', () => {
+    settings.excludePaths = ['Archive'];
+    const pluginApi = createPluginApi(createApp({}));
+
+    expect(pluginApi.isPathIgnored('Archive/Note.md')).toBe(true);
+    expect(pluginApi.isPathIgnored('Notes/Note.md')).toBe(false);
+  });
+
+  it('honours an excluded regular expression', () => {
+    // An alternation, so this is doing something the plain-path form cannot.
+    settings.excludePaths = ['/^(Temp|Scratch)/'];
+    const pluginApi = createPluginApi(createApp({}));
+
+    expect(pluginApi.isPathIgnored('Temp/Note.md')).toBe(true);
+    expect(pluginApi.isPathIgnored('Scratch/Note.md')).toBe(true);
+    expect(pluginApi.isPathIgnored('Notes/Temp/Note.md')).toBe(false);
+  });
+
+  it('ignores everything outside the include list', () => {
+    settings.includePaths = ['Notes'];
+    const pluginApi = createPluginApi(createApp({}));
+
+    expect(pluginApi.isPathIgnored('Notes/Note.md')).toBe(false);
+    expect(pluginApi.isPathIgnored('Other/Note.md')).toBe(true);
+  });
+});
+
+describe('PluginApiImpl.isTreatedAsAttachment', () => {
+  it('treats a drawing as an attachment and a plain note as a note', () => {
+    const pluginApi = createPluginApi(createApp({}));
+
+    expect(pluginApi.isTreatedAsAttachment('Notes/Drawing.excalidraw.md')).toBe(true);
+    expect(pluginApi.isTreatedAsAttachment('Notes/Note.md')).toBe(false);
+  });
+
+  it('follows an edited extension list', () => {
+    settings.treatAsAttachmentExtensions = ['.canvas.md'];
+    const pluginApi = createPluginApi(createApp({}));
+
+    expect(pluginApi.isTreatedAsAttachment('Notes/Board.canvas.md')).toBe(true);
+    expect(pluginApi.isTreatedAsAttachment('Notes/Drawing.excalidraw.md')).toBe(false);
   });
 });
