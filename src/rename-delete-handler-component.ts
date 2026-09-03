@@ -97,6 +97,7 @@ import {
 } from 'obsidian-dev-utils/path';
 
 import { pluralize } from './pluralize.ts';
+import { RescueDecisionScope } from './rescue-decision-scope.ts';
 
 /**
  * Parameters for {@link RenameDeleteHandlerSettings.getRescuePath}.
@@ -106,6 +107,15 @@ export interface GetRescuePathParams {
    * The path of the attachment that is about to be stranded.
    */
   readonly attachmentPath: string;
+
+  /**
+   * The questions this deletion has already put to the user, and their answers.
+   *
+   * A consumer that asks the user anything must ask THROUGH this, because a folder deletion calls this
+   * hook more than once for the same attachment and the calls overlap in time — see
+   * {@link RescueDecisionScope}.
+   */
+  readonly rescueDecisionScope: RescueDecisionScope;
 
   /**
    * The paths of the notes that still reference the attachment once the deletion is done. Never empty.
@@ -179,18 +189,21 @@ interface DeleteHandlerConstructorParams {
   readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
   readonly file: TAbstractFile;
   readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly rescueDecisionScope: RescueDecisionScope;
   readonly settingsManager: SettingsManager;
 }
 
 interface DeleteProtectionPatchComponentConstructorParams {
   readonly app: App;
   readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly rescueDecisionScope: RescueDecisionScope;
   readonly settingsManager: SettingsManager;
 }
 
 interface DidRescueStillUsedAttachmentParams {
   readonly app: App;
   readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly rescueDecisionScope: RescueDecisionScope;
   readonly rescueParams: RescueStillUsedFileParams;
   readonly settingsManager: SettingsManager;
 }
@@ -276,6 +289,7 @@ class DeleteHandler {
   private readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
   private readonly file: TAbstractFile;
   private readonly pluginNoticeComponent: PluginNoticeComponent;
+  private readonly rescueDecisionScope: RescueDecisionScope;
   private readonly settingsManager: SettingsManager;
 
   public constructor(params: DeleteHandlerConstructorParams) {
@@ -283,6 +297,7 @@ class DeleteHandler {
     this.file = params.file;
     this.abortSignal = params.abortSignal;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
+    this.rescueDecisionScope = params.rescueDecisionScope;
     this.settingsManager = params.settingsManager;
     this.deletedMetadataCacheMap = params.deletedMetadataCacheMap;
   }
@@ -331,6 +346,7 @@ class DeleteHandler {
             app: this.app,
             deletedNotePath: this.file.path,
             pathOrFile: attachmentFile,
+            pluginNoticeComponent: this.pluginNoticeComponent,
             rescueStillUsedFile: this.rescueStillUsedFile.bind(this),
             shouldDeleteEmptyFolders: settings.emptyFolderBehavior !== EmptyFolderBehavior.Keep
           });
@@ -378,6 +394,7 @@ class DeleteHandler {
       app: this.app,
       deletedNotePath: this.file.path,
       pathOrFile: attachmentFolder,
+      pluginNoticeComponent: this.pluginNoticeComponent,
       rescueStillUsedFile: this.rescueStillUsedFile.bind(this),
       shouldDeleteEmptyFolders: settings.emptyFolderBehavior !== EmptyFolderBehavior.Keep
     });
@@ -388,6 +405,7 @@ class DeleteHandler {
     return didRescueStillUsedAttachment({
       app: this.app,
       pluginNoticeComponent: this.pluginNoticeComponent,
+      rescueDecisionScope: this.rescueDecisionScope,
       rescueParams,
       settingsManager: this.settingsManager
     });
@@ -425,12 +443,15 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
    */
   private readonly replayedFolderPaths = new Set<string>();
 
+  private readonly rescueDecisionScope: RescueDecisionScope;
+
   private readonly settingsManager: SettingsManager;
 
   public constructor(params: DeleteProtectionPatchComponentConstructorParams) {
     super();
     this.app = params.app;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
+    this.rescueDecisionScope = params.rescueDecisionScope;
     this.settingsManager = params.settingsManager;
   }
 
@@ -563,6 +584,12 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
     );
 
     this.replayedFolderPaths.add(folder.path);
+    /*
+     * Entered here rather than at the top of the method so the scope is only held open once the replay is
+     * actually going to ask about something. The per-file handlers this replay's deletions trigger enter
+     * the same scope as they are enqueued, which is what keeps it alive past the `finally` below.
+     */
+    this.rescueDecisionScope.enter();
     try {
       await deleteIfNotUsed({
         app: this.app,
@@ -585,6 +612,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
       });
     } finally {
       this.replayedFolderPaths.delete(folder.path);
+      this.rescueDecisionScope.exit();
     }
   }
 
@@ -592,6 +620,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
     return didRescueStillUsedAttachment({
       app: this.app,
       pluginNoticeComponent: this.pluginNoticeComponent,
+      rescueDecisionScope: this.rescueDecisionScope,
       rescueParams,
       settingsManager: this.settingsManager
     });
@@ -1384,6 +1413,8 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
 
   private readonly interruptedRenamesMap = new Map<string, InterruptedRename[]>();
 
+  private readonly rescueDecisionScope = new RescueDecisionScope();
+
   /**
    * Creates an instance of RenameDeleteHandlerComponent.
    *
@@ -1421,22 +1452,41 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
       new DeleteProtectionPatchComponent({
         app: this.app,
         pluginNoticeComponent: this.pluginNoticeComponent,
+        rescueDecisionScope: this.rescueDecisionScope,
         settingsManager: this.settingsManager
       })
     );
   }
 
   private handleDelete(file: TAbstractFile): void {
+    /*
+     * Entered synchronously, as the deletion is ENQUEUED rather than as it runs. A folder deletion is
+     * replayed before these handlers are queued, and the replay's own scope closes as soon as it returns
+     * — so entering here is what carries the user's answers across the gap to the handlers the replay
+     * just produced. See `RescueDecisionScope`.
+     */
+    this.rescueDecisionScope.enter();
+
     addToQueue({
-      operationFunction: (abortSignal) =>
-        new DeleteHandler({
-          abortSignal,
-          app: this.app,
-          deletedMetadataCacheMap: this.deletedMetadataCacheMap,
-          file,
-          pluginNoticeComponent: this.pluginNoticeComponent,
-          settingsManager: this.settingsManager
-        }).handle(),
+      operationFunction: async (abortSignal) => {
+        try {
+          await new DeleteHandler({
+            abortSignal,
+            app: this.app,
+            deletedMetadataCacheMap: this.deletedMetadataCacheMap,
+            file,
+            pluginNoticeComponent: this.pluginNoticeComponent,
+            rescueDecisionScope: this.rescueDecisionScope,
+            settingsManager: this.settingsManager
+          }).handle();
+        } finally {
+          /*
+           * Reached even when the handler throws or aborts: the queue runs every item it accepted, and
+           * an operation that failed still has to close the scope its enqueueing opened.
+           */
+          this.rescueDecisionScope.exit();
+        }
+      },
       operationName: `Handle delete: ${file.path}`
     });
   }
@@ -1566,6 +1616,7 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
   const attachmentPath = params.rescueParams.file.path;
   const rescuePath = await settings.getRescuePath({
     attachmentPath,
+    rescueDecisionScope: params.rescueDecisionScope,
     survivingNotePaths: params.rescueParams.survivingNotePaths
   });
 

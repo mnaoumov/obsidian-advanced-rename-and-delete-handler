@@ -35,6 +35,7 @@ const EXPECTED_PROPERTY_NAMES = [
   'emptyFolderBehavior',
   'shouldRescueSharedAttachments',
   'notePriorities',
+  'rescueAttachmentUsedByMultipleNotesMode',
   'treatAsAttachmentExtensions',
   'includePaths',
   'excludePaths'

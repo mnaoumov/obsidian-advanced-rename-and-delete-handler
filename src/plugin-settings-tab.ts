@@ -5,6 +5,7 @@ import { PluginSettingsTabBase } from 'obsidian-dev-utils/obsidian/plugin/plugin
 
 import type { PluginSettings } from './plugin-settings.ts';
 
+import { RescueAttachmentUsedByMultipleNotesMode } from './plugin-settings.ts';
 import { EmptyFolderBehavior } from './rename-delete-handler-component.ts';
 
 export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
@@ -163,7 +164,7 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
               appendCodeBlock(f, '/regular expression/');
               f.appendText('.');
               f.createEl('br');
-              f.appendText('If the setting is empty, or two notes tie, the attachment is left where it is.');
+              f.appendText('If the setting is empty, or two notes tie, the list settles nothing and the row below decides what happens.');
             }),
             name: 'Note priorities',
             render: (setting) => {
@@ -171,6 +172,28 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
                 this.bind({
                   propertyName: 'notePriorities',
                   valueComponent: multipleText
+                });
+              });
+            }
+          }),
+          this.settingEx({
+            desc: createFragment((f) => {
+              f.appendText('What to do when the priority list above settles nothing — it is empty, nothing in it matches, or two notes tie.');
+              f.createEl('br');
+              f.appendText('Ask shows the notes keeping the attachment alive, says why the list did not decide, and moves the attachment into whichever one you pick.');
+              f.createEl('br');
+              f.appendText('Leave it in place keeps the attachment, and the folder holding it, exactly where they are.');
+            }),
+            name: 'When several notes could adopt the attachment',
+            render: (setting) => {
+              setting.addDropdown((dropdown) => {
+                dropdown.addOptions({
+                  [RescueAttachmentUsedByMultipleNotesMode.Prompt]: 'Ask which note adopts it',
+                  [RescueAttachmentUsedByMultipleNotesMode.Skip]: 'Leave it in place'
+                });
+                this.bind({
+                  propertyName: 'rescueAttachmentUsedByMultipleNotesMode',
+                  valueComponent: dropdown
                 });
               });
             }
