@@ -49,6 +49,7 @@ import {
   getAttachmentFolderPath,
   hasOwnAttachmentFolder
 } from 'obsidian-dev-utils/obsidian/attachment-path';
+import { rebasePathOntoFolder } from 'obsidian-dev-utils/obsidian/attachment-unit-folder';
 import { getCanvasReferences } from 'obsidian-dev-utils/obsidian/canvas';
 import { ComponentEx } from 'obsidian-dev-utils/obsidian/components/component-ex';
 import { MonkeyAroundComponent } from 'obsidian-dev-utils/obsidian/components/monkey-around-component';
@@ -96,8 +97,11 @@ import {
   relative
 } from 'obsidian-dev-utils/path';
 
+import type { UnitFolderMove } from './unit-folder-rescue.ts';
+
 import { pluralize } from './pluralize.ts';
 import { RescueDecisionScope } from './rescue-decision-scope.ts';
+import { planUnitFolderMove } from './unit-folder-rescue.ts';
 
 /**
  * Parameters for {@link RenameDeleteHandlerSettings.getRescuePath}.
@@ -140,7 +144,7 @@ export interface RenameDeleteHandlerSettings {
    * than guesses. Returning `null` — or not implementing this at all — keeps the attachment where it is,
    * which is the behavior every consumer had before this member existed.
    */
-  getRescuePath?(params: GetRescuePathParams): Promise<null | string>;
+  getRescuePath?(params: GetRescuePathParams): Promise<null | RescueDestination>;
 
   /**
    * Whether the path is a note.
@@ -183,6 +187,26 @@ export interface RenameDeleteHandlerSettings {
   shouldUpdateFileNameAliases: boolean;
 }
 
+/**
+ * Where a stranded attachment belongs, as answered by {@link RenameDeleteHandlerSettings.getRescuePath}.
+ */
+export interface RescueDestination {
+  /**
+   * The path the attachment itself belongs at, when it travels alone.
+   */
+  readonly attachmentPath: string;
+
+  /**
+   * The folder the attachment has to travel inside, because the consuming plugin's user designated it as
+   * an attachment unit — a `_files` tree, a drawing's sidecar folder. `null` when the attachment travels
+   * alone, which is the answer a vault with no attachment-location plugin installed always gets.
+   *
+   * Moving the lone file out of such a folder tears the unit apart, so the folder is what the handler
+   * moves; {@link RescueDestination.attachmentPath} still says where inside it the attachment lands.
+   */
+  readonly unitFolderPath: null | string;
+}
+
 interface DeleteHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
@@ -205,6 +229,7 @@ interface DidRescueStillUsedAttachmentParams {
   readonly pluginNoticeComponent: PluginNoticeComponent;
   readonly rescueDecisionScope: RescueDecisionScope;
   readonly rescueParams: RescueStillUsedFileParams;
+  readonly rootFolderPath: string;
   readonly settingsManager: SettingsManager;
 }
 
@@ -212,6 +237,12 @@ interface FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams {
   readonly app: App;
   readonly fileManager: FileManager;
   readonly settingsManager: SettingsManager;
+}
+
+interface FindSurvivingNotePathsParams {
+  readonly app: App;
+  readonly deletedNotePaths: Iterable<string>;
+  readonly file: TFile;
 }
 
 interface HandledRenameKey {
@@ -229,6 +260,12 @@ interface MetadataDeletedHandlerConstructorParams {
   readonly file: TAbstractFile;
   readonly previousCache: CachedMetadata | null;
   readonly settingsManager: SettingsManager;
+}
+
+interface MoveUnitFolderParams {
+  readonly app: App;
+  readonly attachmentPath: string;
+  readonly unitFolderMove: UnitFolderMove;
 }
 
 interface RenameDeleteHandlerComponentConstructorParams {
@@ -281,6 +318,16 @@ interface RenameMapInitBacklinksMapParams {
    * The backlinks map for a single file, keyed by backlink path.
    */
   readonly singleBacklinksMap: Map<string, Reference[]>;
+}
+
+interface RescueStillUsedUnitFoldersParams {
+  readonly app: App;
+  readonly deletedNotePaths: Iterable<string>;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly rescueDecisionScope: RescueDecisionScope;
+  readonly rootFolder: TFolder;
+  readonly settingsManager: SettingsManager;
+  shouldProtectIfStillUsed?(this: void, file: TFile): boolean;
 }
 
 class DeleteHandler {
@@ -347,7 +394,11 @@ class DeleteHandler {
             deletedNotePath: this.file.path,
             pathOrFile: attachmentFile,
             pluginNoticeComponent: this.pluginNoticeComponent,
-            rescueStillUsedFile: this.rescueStillUsedFile.bind(this),
+            /*
+             * The vault root as the walked folder, because nothing is being walked: this deletes ONE named
+             * attachment, so there is no folder whose deletion a unit-folder move could enlarge.
+             */
+            rescueStillUsedFile: this.rescueStillUsedFile.bind(this, ''),
             shouldDeleteEmptyFolders: settings.emptyFolderBehavior !== EmptyFolderBehavior.Keep
           });
           this.abortSignal.throwIfAborted();
@@ -390,23 +441,37 @@ class DeleteHandler {
 
     this.abortSignal.throwIfAborted();
 
+    /*
+     * Before the walk, never during it — see `rescueStillUsedUnitFolders`.
+     */
+    await rescueStillUsedUnitFolders({
+      app: this.app,
+      deletedNotePaths: [this.file.path],
+      pluginNoticeComponent: this.pluginNoticeComponent,
+      rescueDecisionScope: this.rescueDecisionScope,
+      rootFolder: attachmentFolder,
+      settingsManager: this.settingsManager
+    });
+    this.abortSignal.throwIfAborted();
+
     await deleteIfNotUsed({
       app: this.app,
       deletedNotePath: this.file.path,
       pathOrFile: attachmentFolder,
       pluginNoticeComponent: this.pluginNoticeComponent,
-      rescueStillUsedFile: this.rescueStillUsedFile.bind(this),
+      rescueStillUsedFile: this.rescueStillUsedFile.bind(this, attachmentFolder.path),
       shouldDeleteEmptyFolders: settings.emptyFolderBehavior !== EmptyFolderBehavior.Keep
     });
     this.abortSignal.throwIfAborted();
   }
 
-  private rescueStillUsedFile(rescueParams: RescueStillUsedFileParams): Promise<boolean> {
+  private rescueStillUsedFile(rootFolderPath: string, rescueParams: RescueStillUsedFileParams): Promise<boolean> {
     return didRescueStillUsedAttachment({
       app: this.app,
       pluginNoticeComponent: this.pluginNoticeComponent,
       rescueDecisionScope: this.rescueDecisionScope,
       rescueParams,
+      rootFolderPath,
       settingsManager: this.settingsManager
     });
   }
@@ -524,11 +589,12 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
     const stillUsedAttachmentPaths: string[] = [];
 
     for (const candidateFile of candidateFiles) {
-      const backlinks = await getBacklinksForFileSafe({ app: this.app, pathOrFile: candidateFile });
-      for (const deletedNotePath of deletedNotePaths) {
-        backlinks.clear(deletedNotePath);
-      }
-      if (backlinks.count() !== 0) {
+      const survivingNotePaths = await findSurvivingNotePaths({
+        app: this.app,
+        deletedNotePaths,
+        file: candidateFile
+      });
+      if (survivingNotePaths.length > 0) {
         stillUsedAttachmentPaths.push(candidateFile.path);
       }
     }
@@ -591,13 +657,26 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
      */
     this.rescueDecisionScope.enter();
     try {
+      /*
+       * Before the walk, never during it — see `rescueStillUsedUnitFolders`.
+       */
+      await rescueStillUsedUnitFolders({
+        app: this.app,
+        deletedNotePaths,
+        pluginNoticeComponent: this.pluginNoticeComponent,
+        rescueDecisionScope: this.rescueDecisionScope,
+        rootFolder: folder,
+        settingsManager: this.settingsManager,
+        shouldProtectIfStillUsed: (candidateFile) => !(settings.isNote?.(candidateFile.path) ?? false)
+      });
+
       await deleteIfNotUsed({
         app: this.app,
         deleteAbstractFile,
         deletedNotePaths: [...deletedNotePaths],
         pathOrFile: folder,
         pluginNoticeComponent: this.pluginNoticeComponent,
-        rescueStillUsedFile: this.rescueStillUsedFile.bind(this),
+        rescueStillUsedFile: this.rescueStillUsedFile.bind(this, folder.path),
         /*
          * The user named THIS folder, so it goes even under `EmptyFolderBehavior.Keep` — that setting
          * governs folders emptied incidentally, not the one explicitly deleted. `deleteIfNotUsed` still
@@ -616,12 +695,13 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
     }
   }
 
-  private rescueStillUsedFile(rescueParams: RescueStillUsedFileParams): Promise<boolean> {
+  private rescueStillUsedFile(rootFolderPath: string, rescueParams: RescueStillUsedFileParams): Promise<boolean> {
     return didRescueStillUsedAttachment({
       app: this.app,
       pluginNoticeComponent: this.pluginNoticeComponent,
       rescueDecisionScope: this.rescueDecisionScope,
       rescueParams,
+      rootFolderPath,
       settingsManager: this.settingsManager
     });
   }
@@ -1614,33 +1694,61 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
   }
 
   const attachmentPath = params.rescueParams.file.path;
-  const rescuePath = await settings.getRescuePath({
+  const rescueDestination = await settings.getRescuePath({
     attachmentPath,
     rescueDecisionScope: params.rescueDecisionScope,
     survivingNotePaths: params.rescueParams.survivingNotePaths
   });
 
-  if (rescuePath === null) {
+  if (rescueDestination === null) {
     getLibDebugger('RenameDeleteHandler:didRescueStillUsedAttachment')(`No rescue path for ${attachmentPath}; keeping it where it is.`);
+    return false;
+  }
+
+  const unitFolderMove = planUnitFolderMove({
+    rescueDestination,
+    rootFolderPath: params.rootFolderPath
+  });
+
+  if (rescueDestination.unitFolderPath !== null && !unitFolderMove) {
+    /*
+     * The attachment is one file of a folder that has to travel whole, and that folder is not going
+     * anywhere — it already sits at its destination, or it is the very folder being deleted. Moving the
+     * lone file out would split the unit, which is exactly the damage this understands how to avoid, so
+     * the attachment is kept where it is instead.
+     */
+    getLibDebugger('RenameDeleteHandler:didRescueStillUsedAttachment')(
+      `${attachmentPath} belongs to the attachment unit folder ${rescueDestination.unitFolderPath}, which cannot move; keeping it where it is.`
+    );
     return false;
   }
 
   try {
     /*
+     * An attachment designated as part of a unit travels as the whole folder. Moving the lone file would
+     * leave its siblings behind and the unit arrives broken — the defect this branch exists to fix.
+     *
      * `renameSafe` creates the destination folder, resolves a collision via `getSafeRenamePath`, and moves
-     * through `app.fileManager.renameFile`, so the surviving notes' links follow the attachment.
+     * through `app.fileManager.renameFile`, so the surviving notes' links follow the attachment either way.
      */
-    const newAttachmentPath = await renameSafe({
-      app: params.app,
-      newPath: rescuePath,
-      oldPathOrAbstractFile: params.rescueParams.file
-    });
+    const newAttachmentPath = unitFolderMove
+      ? await moveUnitFolder({
+        app: params.app,
+        attachmentPath,
+        unitFolderMove
+      })
+      : await renameSafe({
+        app: params.app,
+        newPath: rescueDestination.attachmentPath,
+        oldPathOrAbstractFile: params.rescueParams.file
+      });
 
-    if (newAttachmentPath === attachmentPath) {
+    if (newAttachmentPath === null || newAttachmentPath === attachmentPath) {
       /*
-       * The attachment is already where it belongs. This is the normal second look at a file the folder
-       * delete just rescued: the owning note's own deletion is reported afterwards and walks its links
-       * again. Nothing moved, so nothing is claimed — the caller keeps it in place, which is the truth.
+       * The attachment is already where it belongs — or its unit folder could not be resolved. The former
+       * is the normal second look at a file the folder delete just rescued: the owning note's own deletion
+       * is reported afterwards and walks its links again. Nothing moved, so nothing is claimed — the caller
+       * keeps it in place, which is the truth.
        */
       getLibDebugger('RenameDeleteHandler:didRescueStillUsedAttachment')(`${attachmentPath} already sits at its rescue path; nothing to move.`);
       return false;
@@ -1663,9 +1771,27 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
      * A rescue that half happened must not read as success — reporting `false` falls back to keeping the
      * attachment in place with the `attachmentIsStillUsed` notice, which is still safe.
      */
-    printError(new Error(`Failed to rescue ${attachmentPath} to ${rescuePath}`, { cause: error }));
+    printError(new Error(`Failed to rescue ${attachmentPath} to ${unitFolderMove?.newFolderPath ?? rescueDestination.attachmentPath}`, { cause: error }));
     return false;
   }
+}
+
+/**
+ * Lists the notes that would still reference a file once everything being deleted alongside it is gone.
+ *
+ * The same rule {@link deleteIfNotUsed} applies internally, restated here because the pre-pass has to know
+ * WHICH notes survive — {@link deleteIfNotUsed} only hands that to its rescue callback, and by then the
+ * walk has already started.
+ *
+ * @param params - The file, and the notes disappearing with it.
+ * @returns The paths of the notes that keep the file alive. Empty means the file is free to go.
+ */
+async function findSurvivingNotePaths(params: FindSurvivingNotePathsParams): Promise<string[]> {
+  const backlinks = await getBacklinksForFileSafe({ app: params.app, pathOrFile: params.file });
+  for (const deletedNotePath of params.deletedNotePaths) {
+    backlinks.clear(deletedNotePath);
+  }
+  return backlinks.keys();
 }
 
 /**
@@ -1690,6 +1816,137 @@ function getLinkIdentityKey(link: Reference): string {
     link: link.link,
     original: link.original
   });
+}
+
+/**
+ * Moves a whole attachment unit folder, and reports where the linked attachment ended up inside it.
+ *
+ * @param params - The planned move, and the attachment whose new path is wanted.
+ * @returns The attachment's path after the move, or `null` when the folder could not be resolved.
+ */
+async function moveUnitFolder(params: MoveUnitFolderParams): Promise<null | string> {
+  const unitFolder = getFolderOrNull({ app: params.app, pathOrFolder: params.unitFolderMove.oldFolderPath });
+  if (!unitFolder) {
+    getLibDebugger('RenameDeleteHandler:moveUnitFolder')(
+      `Cannot move the attachment unit folder ${params.unitFolderMove.oldFolderPath}; it could not be resolved.`
+    );
+    return null;
+  }
+
+  const newUnitFolderPath = await renameSafe({
+    app: params.app,
+    newPath: params.unitFolderMove.newFolderPath,
+    oldPathOrAbstractFile: unitFolder
+  });
+
+  // The whole tree moved, so the attachment is wherever it was inside it, only rebased.
+  return rebasePathOntoFolder({
+    newFolderPath: newUnitFolderPath,
+    oldFolderPath: params.unitFolderMove.oldFolderPath,
+    path: params.attachmentPath
+  });
+}
+
+/**
+ * Moves out every attachment unit folder a deletion would otherwise tear apart, BEFORE the deletion walks
+ * the tree.
+ *
+ * Doing it during the walk cannot work. {@link deleteIfNotUsed} lists a folder's children as paths and
+ * walks them in order: a sibling reached before the linked attachment has no surviving backlink and is
+ * deleted outright, so the unit is already gutted by the time the rescue hook fires; a sibling reached
+ * after it no longer resolves, which reports the child as kept and leaves the folder the user actually
+ * deleted standing. Moving the folder first means the walk never sees any of it.
+ *
+ * Only the folder case needs this. An attachment rescued on its own is moved by
+ * {@link didRescueStillUsedAttachment} as it always was.
+ *
+ * @param params - The folder about to be walked, and everything needed to ask where its attachments belong.
+ * @returns A {@link Promise} that resolves when every unit folder that had to move has moved.
+ */
+async function rescueStillUsedUnitFolders(params: RescueStillUsedUnitFoldersParams): Promise<void> {
+  const settings = params.settingsManager.getSettings();
+  if (!settings.getRescuePath) {
+    return;
+  }
+
+  /*
+   * Captured as PATHS, not as files: a `TFile` follows its own move, so the object cannot answer whether an
+   * earlier move in this loop already carried it out of the tree. The path can.
+   */
+  const candidatePaths: string[] = [];
+  Vault.recurseChildren(params.rootFolder, (child) => {
+    if (isFile(child) && (params.shouldProtectIfStillUsed?.(child) ?? true)) {
+      candidatePaths.push(child.path);
+    }
+  });
+
+  for (const candidatePath of candidatePaths) {
+    const candidateFile = getFileOrNull({ app: params.app, pathOrFile: candidatePath });
+    if (!candidateFile) {
+      /*
+       * An earlier iteration moved the unit folder holding this file. It is out of the deletion's way, and
+       * the answer that moved it governs the whole unit — asking again would offer to split it.
+       */
+      continue;
+    }
+
+    const survivingNotePaths = await findSurvivingNotePaths({
+      app: params.app,
+      deletedNotePaths: params.deletedNotePaths,
+      file: candidateFile
+    });
+
+    if (survivingNotePaths.length === 0) {
+      continue;
+    }
+
+    const rescueDestination = await settings.getRescuePath({
+      attachmentPath: candidatePath,
+      rescueDecisionScope: params.rescueDecisionScope,
+      survivingNotePaths
+    });
+
+    if (rescueDestination === null) {
+      continue;
+    }
+
+    const unitFolderMove = planUnitFolderMove({
+      rescueDestination,
+      rootFolderPath: params.rootFolder.path
+    });
+
+    if (!unitFolderMove) {
+      continue;
+    }
+
+    try {
+      const newAttachmentPath = await moveUnitFolder({
+        app: params.app,
+        attachmentPath: candidatePath,
+        unitFolderMove
+      });
+
+      if (newAttachmentPath === null) {
+        continue;
+      }
+
+      await waitForPendingLinkUpdates(params.app);
+
+      getLibDebugger('RenameDeleteHandler:rescueStillUsedUnitFolders')(
+        `Rescued the attachment unit folder ${unitFolderMove.oldFolderPath} to ${unitFolderMove.newFolderPath}.`
+      );
+      params.pluginNoticeComponent.showNotice(
+        `Attachment ${candidatePath} is still used by other notes. Its folder was moved to ${unitFolderMove.newFolderPath}.`
+      );
+    } catch (error) {
+      /*
+       * A unit folder that could not be moved is left where it is, and the walk carries on: the attachment
+       * is then kept in place by the rescue hook with the `attachmentIsStillUsed` notice, which is still
+       * safe — the unit is torn apart rather than lost.
+       */
+      printError(new Error(`Failed to rescue the attachment unit folder ${unitFolderMove.oldFolderPath} to ${unitFolderMove.newFolderPath}`, { cause: error }));
+    }
+  }
 }
 
 /* v8 ignore stop */

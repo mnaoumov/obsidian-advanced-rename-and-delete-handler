@@ -12,6 +12,11 @@
  * installed one, and falls back to Obsidian's own configured folder when none has — so a vault running
  * a custom attachment-path policy gets that policy here, and a plain vault gets the plain answer.
  *
+ * The answer also says whether the attachment is one file of a folder that has to travel whole — a
+ * `_files` tree, a drawing's sidecar folder. That designation is read off a sibling member on the same
+ * patched function, for the same reason and with the same fallback: whoever owns the vault's
+ * attachment-path policy owns this too, and a vault with nobody owning it has no units.
+ *
  * The answer must be free of side effects: the handler calls this twice for a folder deletion, because
  * the owning note's own deletion re-walks its links afterwards, and performs the move itself once it
  * has a path.
@@ -27,6 +32,7 @@ import {
   AttachmentPathContext,
   getAttachmentFolderPath
 } from 'obsidian-dev-utils/obsidian/attachment-path';
+import { findAttachmentUnitFolderPath } from 'obsidian-dev-utils/obsidian/attachment-unit-folder';
 import {
   findNoPriorityWinnerReason,
   findNotePriorityRank,
@@ -35,8 +41,12 @@ import {
 import { join } from 'obsidian-dev-utils/path';
 
 import type { PluginSettingsComponent } from './plugin-settings-component.ts';
-import type { GetRescuePathParams } from './rename-delete-handler-component.ts';
+import type {
+  GetRescuePathParams,
+  RescueDestination
+} from './rename-delete-handler-component.ts';
 
+import { checkIsAttachmentUnitFolder } from './attachment-unit-folder-designation.ts';
 import { RescueAttachmentUsedByMultipleNotesMode } from './plugin-settings.ts';
 import { showRescueAmbiguityModal } from './rescue-ambiguity-modal.ts';
 
@@ -90,9 +100,9 @@ export class RescuePathResolver {
    * Resolves where an attachment about to be stranded should be moved to.
    *
    * @param params - The parameters provided by the rename/delete handler.
-   * @returns The destination path, or `null` to leave the attachment where it is.
+   * @returns The destination, or `null` to leave the attachment where it is.
    */
-  public async getRescuePath(params: RescuePathResolverGetRescuePathParams): Promise<null | string> {
+  public async getRescuePath(params: RescuePathResolverGetRescuePathParams): Promise<null | RescueDestination> {
     if (!this.pluginSettingsComponent.settings.shouldRescueSharedAttachments) {
       return null;
     }
@@ -118,11 +128,24 @@ export class RescuePathResolver {
       notePathOrFile: notePath
     });
 
-    /*
-     * The attachment keeps its name. A rescue relocates a file the user never named, and renaming it as
-     * well would compound one surprise with another.
-     */
-    return join(attachmentFolderPath, attachmentFile.name);
+    return {
+      /*
+       * The attachment keeps its name. A rescue relocates a file the user never named, and renaming it as
+       * well would compound one surprise with another.
+       */
+      attachmentPath: join(attachmentFolderPath, attachmentFile.name),
+
+      /*
+       * Read off the vault, not off any plugin's settings: whichever attachment-location plugin is
+       * installed publishes the designation next to the `extended` this resolver already asks for the
+       * attachment folder, and a vault running none answers "no unit" — which is the behavior this plugin
+       * had before it asked at all.
+       */
+      unitFolderPath: findAttachmentUnitFolderPath({
+        attachmentPath: params.attachmentPath,
+        checkIsAttachmentUnitFolder: (folderPath) => checkIsAttachmentUnitFolder({ folderPath, vault: this.app.vault })
+      })
+    };
   }
 
   /**
