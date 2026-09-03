@@ -95,6 +95,8 @@ vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
 import { PluginSettingsComponent } from './plugin-settings-component.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { Plugin } from './plugin.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { RescueDecisionScope } from './rescue-decision-scope.ts';
 
 const PLUGIN_MANIFEST: PluginManifest = {
   author: 'test',
@@ -206,6 +208,7 @@ describe('Plugin', () => {
       await expect(
         builtSettings.getRescuePath?.({
           attachmentPath: 'attachments/image.png',
+          rescueDecisionScope: new RescueDecisionScope(),
           survivingNotePaths: ['keeper.md']
         })
       ).resolves.toBeNull();

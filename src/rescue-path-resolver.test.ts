@@ -3,6 +3,7 @@ import type {
   TFile
 } from 'obsidian';
 
+import { NoPriorityWinnerReason } from 'obsidian-dev-utils/obsidian/note-priority';
 import { strictProxy } from 'obsidian-dev-utils/strict-proxy';
 import {
   beforeEach,
@@ -14,7 +15,11 @@ import {
 
 import type { PluginSettingsComponent } from './plugin-settings-component.ts';
 
-import { PluginSettings } from './plugin-settings.ts';
+import {
+  PluginSettings,
+  RescueAttachmentUsedByMultipleNotesMode
+} from './plugin-settings.ts';
+import { RescueDecisionScope } from './rescue-decision-scope.ts';
 import {
   pickRescueNotePath,
   RescuePathResolver
@@ -31,8 +36,9 @@ interface CreateResolverOptions {
 const ATTACHMENT_PATH = 'attachments/image.png';
 const ATTACHMENT_FOLDER_PATH = 'Notes/attachments';
 
-const { mockGetAttachmentFolderPath } = vi.hoisted(() => ({
-  mockGetAttachmentFolderPath: vi.fn()
+const { mockGetAttachmentFolderPath, mockShowRescueAmbiguityModal } = vi.hoisted(() => ({
+  mockGetAttachmentFolderPath: vi.fn(),
+  mockShowRescueAmbiguityModal: vi.fn()
 }));
 
 vi.mock('obsidian-dev-utils/obsidian/attachment-path', async (importOriginal) => {
@@ -43,9 +49,15 @@ vi.mock('obsidian-dev-utils/obsidian/attachment-path', async (importOriginal) =>
   };
 });
 
+vi.mock('./rescue-ambiguity-modal.ts', () => ({
+  showRescueAmbiguityModal: mockShowRescueAmbiguityModal
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetAttachmentFolderPath.mockResolvedValue(ATTACHMENT_FOLDER_PATH);
+  // The dialog's own answer is asserted where it matters; everywhere else it declines, as a dismissal does.
+  mockShowRescueAmbiguityModal.mockResolvedValue({ adoptingNotePath: null, shouldUseSameActionForRest: false });
 });
 
 function createResolver(options: CreateResolverOptions = {}): RescuePathResolver {
@@ -79,6 +91,7 @@ describe('RescuePathResolver', () => {
 
     const rescuePath = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/keeper.md']
     });
 
@@ -94,6 +107,7 @@ describe('RescuePathResolver', () => {
 
     const rescuePath = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/keeper.md']
     });
 
@@ -105,6 +119,7 @@ describe('RescuePathResolver', () => {
 
     const rescuePath = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/keeper.md']
     });
 
@@ -116,6 +131,7 @@ describe('RescuePathResolver', () => {
 
     await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/keeper.md']
     });
 
@@ -136,6 +152,7 @@ describe('RescuePathResolver', () => {
 
     const rescuePath = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/plain.md', 'Notes/tagged.md']
     });
 
@@ -157,21 +174,42 @@ describe('RescuePathResolver', () => {
 
     const rescuePath = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/uncached.md', 'Notes/drawing.excalidraw.md']
     });
 
     expect(rescuePath).toBe(`${ATTACHMENT_FOLDER_PATH}/image.png`);
   });
 
-  it('should decline when several notes survive and no priority list settles it', async () => {
-    const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
+  it('should decline without asking when several notes survive and the mode is to leave it in place', async () => {
+    const resolver = createResolver({
+      settings: {
+        rescueAttachmentUsedByMultipleNotesMode: RescueAttachmentUsedByMultipleNotesMode.Skip,
+        shouldRescueSharedAttachments: true
+      }
+    });
 
     const rescuePath = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
     });
 
     expect(rescuePath).toBeNull();
+    expect(mockShowRescueAmbiguityModal).not.toHaveBeenCalled();
+  });
+
+  it('should not ask when the deletion reported no surviving note at all', async () => {
+    const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
+
+    const rescuePath = await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
+      survivingNotePaths: []
+    });
+
+    expect(rescuePath).toBeNull();
+    expect(mockShowRescueAmbiguityModal).not.toHaveBeenCalled();
   });
 
   it('should let the priority list pick the winner among several surviving notes', async () => {
@@ -184,6 +222,7 @@ describe('RescuePathResolver', () => {
 
     const rescuePath = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/plain.md', 'Notes/drawing.excalidraw.md']
     });
 
@@ -191,6 +230,108 @@ describe('RescuePathResolver', () => {
     expect(mockGetAttachmentFolderPath).toHaveBeenCalledWith(expect.objectContaining({
       notePathOrFile: 'Notes/drawing.excalidraw.md'
     }));
+  });
+
+  it('should move the attachment into the note the user picks when the list settles nothing', async () => {
+    const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
+    mockShowRescueAmbiguityModal.mockResolvedValue({ adoptingNotePath: 'Notes/b.md', shouldUseSameActionForRest: false });
+
+    const rescuePath = await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
+      survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
+    });
+
+    expect(rescuePath).toBe(`${ATTACHMENT_FOLDER_PATH}/image.png`);
+    expect(mockGetAttachmentFolderPath).toHaveBeenCalledWith(expect.objectContaining({
+      notePathOrFile: 'Notes/b.md'
+    }));
+  });
+
+  it('should leave the attachment in place when the user declines to pick', async () => {
+    const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
+
+    const rescuePath = await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
+      survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
+    });
+
+    expect(rescuePath).toBeNull();
+    expect(mockShowRescueAmbiguityModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('should offer the surviving notes sorted, whatever order the deletion reported them in', async () => {
+    const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
+
+    await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
+      survivingNotePaths: ['Notes/b.md', 'Notes/a.md']
+    });
+
+    expect(mockShowRescueAmbiguityModal).toHaveBeenCalledWith(expect.objectContaining({
+      survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
+    }));
+  });
+
+  it.each([
+    ['the list is empty', [], NoPriorityWinnerReason.EmptyList],
+    ['nothing in the list matches', ['.canvas'], NoPriorityWinnerReason.NoMatch],
+    ['the best rank is shared', ['.md'], NoPriorityWinnerReason.Tie]
+  ])('should tell the user that %s', async (_description, notePriorities, expectedReason) => {
+    const resolver = createResolver({
+      settings: {
+        notePriorities,
+        shouldRescueSharedAttachments: true
+      }
+    });
+
+    await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
+      survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
+    });
+
+    expect(mockShowRescueAmbiguityModal).toHaveBeenCalledWith(expect.objectContaining({
+      noPriorityWinnerReason: expectedReason
+    }));
+  });
+
+  it('should ask only once about an attachment the same deletion reports twice', async () => {
+    const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
+    mockShowRescueAmbiguityModal.mockResolvedValue({ adoptingNotePath: null, shouldUseSameActionForRest: false });
+    const rescueDecisionScope = new RescueDecisionScope();
+    rescueDecisionScope.enter();
+
+    const survivingNotePaths = ['Notes/a.md', 'Notes/b.md'];
+    await resolver.getRescuePath({ attachmentPath: ATTACHMENT_PATH, rescueDecisionScope, survivingNotePaths });
+    await resolver.getRescuePath({ attachmentPath: ATTACHMENT_PATH, rescueDecisionScope, survivingNotePaths });
+
+    expect(mockShowRescueAmbiguityModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('should record an answer the user asked to stand for the rest of the deletion', async () => {
+    const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
+    mockShowRescueAmbiguityModal.mockResolvedValue({ adoptingNotePath: 'Notes/b.md', shouldUseSameActionForRest: true });
+    const rescueDecisionScope = new RescueDecisionScope();
+    rescueDecisionScope.enter();
+
+    await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope,
+      survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
+    });
+
+    const neverAsked = vi.fn();
+    const carriedDecision = await rescueDecisionScope.resolveDecision({
+      ask: neverAsked,
+      attachmentPath: 'other/chart.png',
+      survivingNotePaths: ['Notes/b.md', 'Notes/c.md']
+    });
+
+    expect(carriedDecision).toEqual({ adoptingNotePath: 'Notes/b.md' });
+    expect(neverAsked).not.toHaveBeenCalled();
   });
 });
 

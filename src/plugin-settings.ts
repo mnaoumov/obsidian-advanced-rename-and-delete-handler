@@ -3,6 +3,25 @@ import { PathSettings } from 'obsidian-dev-utils/obsidian/path-settings';
 
 import { EmptyFolderBehavior } from './rename-delete-handler-component.ts';
 
+/**
+ * What to do when several notes survive a deletion and the note-priority list names no owner among
+ * them — the list is empty, nothing in it matched, or the best rank is shared.
+ *
+ * An enum rather than a toggle because the box this governs is expected to grow more ways of settling
+ * the same question, the way its sibling in Custom Attachment Location has.
+ */
+export enum RescueAttachmentUsedByMultipleNotesMode {
+  /**
+   * Ask which of the notes adopts the attachment, naming them and saying why the list settled nothing.
+   */
+  Prompt = 'prompt',
+
+  /**
+   * Leave the attachment where it is without asking.
+   */
+  Skip = 'skip'
+}
+
 export class PluginSettings {
   /**
    * What to do with a folder a deletion or a move has left empty.
@@ -14,6 +33,15 @@ export class PluginSettings {
    * otherwise strand. Empty means the user has expressed no preference, and a tie is left unresolved.
    */
   public notePriorities: readonly string[] = [];
+
+  /**
+   * What to do when the note-priority list settles nothing and the attachment would be left behind.
+   *
+   * Asking is the default: the rescue itself is off by default, so a user who reaches this has already
+   * asked for surviving attachments to be moved, and being told which notes tie is the only way they
+   * can act on it.
+   */
+  public rescueAttachmentUsedByMultipleNotesMode = RescueAttachmentUsedByMultipleNotesMode.Prompt;
 
   /**
    * Whether an attachment that collides with an existing file at the destination replaces it.

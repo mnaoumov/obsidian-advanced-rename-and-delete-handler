@@ -22,6 +22,7 @@ interface DemoSettingsPatch {
   emptyFolderBehavior?: string;
   excludePaths?: string[];
   notePriorities?: string[];
+  rescueAttachmentUsedByMultipleNotesMode?: string;
   shouldDeleteConflictingAttachments?: boolean;
   shouldHandleDeletions?: boolean;
   shouldHandleRenames?: boolean;

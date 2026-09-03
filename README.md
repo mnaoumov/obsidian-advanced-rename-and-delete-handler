@@ -43,7 +43,7 @@ A copy of the vault ships with every release. You can access it via any of the f
 - **Links follow a renamed or moved note**, including the display text of a link that was showing the old file name — while a link somebody gave their own words to is left alone. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
 - **Attachments travel with the note that owns them**, folder and all, when it is renamed or moved to another folder. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
 - **Deleting a note can clean up after it** — the attachments only that note used, and the folder the deletion leaves empty. Off by default, because each option removes something. [02 Deleting a note](<./demo-vault/02 Deleting a note.md>)
-- **An attachment two notes share is never deleted with one of them**, and can be moved to the note that still uses it rather than left in a folder belonging to a note that is gone. [03 Shared attachments](<./demo-vault/03 Shared attachments.md>)
+- **An attachment two notes share is never deleted with one of them**, and can be moved to the note that still uses it rather than left in a folder belonging to a note that is gone. When several notes could adopt it and your priority list settles nothing, the plugin names them and asks rather than guessing. [03 Shared attachments](<./demo-vault/03 Shared attachments.md>)
 - **A drawing stored as `.excalidraw.md` is treated as an attachment, not a note**, along with any other ending you add. [04 What counts as a note](<./demo-vault/04 What counts as a note.md>)
 - **The plugin can be confined to part of the vault** with include and exclude path lists. [05 Limiting the scope](<./demo-vault/05 Limiting the scope.md>)
 

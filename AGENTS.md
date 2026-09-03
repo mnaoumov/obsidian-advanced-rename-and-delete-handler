@@ -37,7 +37,7 @@ Three substitutions were forced, and they are the things to preserve when editin
 - **The attachment folder is Obsidian's own `attachmentFolderPath` vault config**, not the owning plugin's setting, and there is no equivalent of its per-note `${noteFileName}` token. So the ported scenarios use a SHARED `./assets` folder, and the note-move suites **move the note to another folder** rather than renaming it in place — that is what relocates a shared attachment folder, and (under `newLinkFormat: 'absolute'`) what makes each rewritten link change length so the links after it shift. The alternative, kept in reserve, is the `app.vault.getAvailablePathForAttachments.extended` stub the performance suite uses as a stand-in for that plugin.
 - **Locks come from `lib.ResourceLockComponent`**, not from the library's realm-global bag: `lockForPath({ mode: 'subtree' })` under a foreign plugin id, and `isLockedByAncestorForPath` to report a rename's lock coverage.
 
-Four of the seven were `it.skip` in their old home, for a shared-instance `renameFile`/`onCleanCache` stall in that plugin's much larger desktop aggregate. **None of them is skipped here** — measured, not assumed: the whole desktop aggregate runs 11 files / 14 tests in ~16s. The single remaining `it.skip` is documentation, in `canvas-partial-write-guard`, for the Advanced Canvas mid-initialization race that cannot be staged headlessly; it carries the manual recipe.
+Four of the seven were `it.skip` in their old home, for a shared-instance `renameFile`/`onCleanCache` stall in that plugin's much larger desktop aggregate. **None of them is skipped here** — measured, not assumed: the whole desktop aggregate runs 12 files / 17 tests in ~30s. The single remaining `it.skip` is documentation, in `canvas-partial-write-guard`, for the Advanced Canvas mid-initialization race that cannot be staged headlessly; it carries the manual recipe.
 
 Two measurements worth keeping, because they contradict what the originals' comments claimed:
 
@@ -45,6 +45,19 @@ Two measurements worth keeping, because they contradict what the originals' comm
 - `foreign-locked-folder-swap` **cannot** be broken from this repo: neutralizing this plugin's own foreign-lock skip in `handleRename` leaves it green, because both fixes it guards are `obsidian-dev-utils`'. It is a consumer-side guard over library behavior. Its lock-coverage assertion is live all the same — weakening the transaction's locks to `mode: 'file'` fails it, naming the three uncovered steps.
 
 `scripts/vitest-config.ts` raises the desktop transport's `commandTimeoutInMilliseconds` to 240s for these. A whole `evalInObsidian` callback is ONE `Runtime.evaluate`, and the transport's 30s default kills a longer one while vitest is still waiting — reported as `CDP command timed out ... Runtime.evaluate`, naming neither the pending `waitUntil` nor the assertion that never ran.
+
+### The rescue-ambiguity dialog asks once per deletion, because the two asks OVERLAP
+
+`src/shared-attachment-tie.cross-platform.integration.test.ts` pins the dialog that opens when several notes could adopt a stranded attachment and `notePriorities` names no single owner (OCAL #71). Two things about it are easy to break:
+
+- **It sets `attachmentFolderPath: './assets'`, a PER-NOTE subfolder, not a shared one.** With a shared folder both tied notes resolve to the same destination, the rescue is a no-op either way, and the test passes without proving anything.
+- **It starts `trashFile` WITHOUT awaiting it**, waits for `.rescue-ambiguity-reason` to appear, clicks a button, and only then races `flushQueue()` against a second dialog. Awaiting the deletion first would deadlock — the deletion is what is waiting for the answer.
+
+The deadlock that shaped `src/rescue-decision-scope.ts` is worth not re-deriving. `getRescuePath` is asked **twice** about one attachment in a folder deletion, and the asks **overlap**: `replayFolderDeletion` (not queued) deletes the owning note first, which enqueues that note's own `DeleteHandler`; the replay then reaches the attachment and awaits a dialog, and while it awaits, the ODU queue runs the handler it just produced, which walks the deleted note's links back to the same attachment and asks again. Two dialogs open over one file, the user answers one, and the deletion never finishes. **A map of finished answers cannot fix this** — at the moment the second ask arrives there is no finished answer to find. So `RescueDecisionScope.resolveDecision` shares the *pending promise*: the second caller joins the first question. The scope's in-flight counter is entered **synchronously at enqueue time**, not inside the queued operation, which is what holds it above zero across the gap between the replay ending and the queue starting.
+
+It lives in its own module rather than in `src/rename-delete-handler-component.ts` only because that file sits inside a `/* v8 ignore */` region and coverage is enforced at 100%.
+
+A blocking modal inside a queued delete is safe: `addToQueue` passes `pluginNoticeComponent: null` to `runWithTimeoutNotice`, so the 60s timeout resolves to `onTimeoutWithoutNotice` — a debug log, no notice, and **no abort**.
 
 ## Deviations from the shared plugin architecture (G51)
 
