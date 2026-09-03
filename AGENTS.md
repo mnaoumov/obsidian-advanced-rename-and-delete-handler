@@ -17,6 +17,14 @@ The note count defaults to 200 and is overridable via `RENAME_DELETE_PERF_VAULT_
 
 > The integration tests run the built bundle in `dist/build`, not `node_modules`. Run `npm run build` first after any source or `obsidian-dev-utils` change, or they silently exercise the stale bundle.
 
+### `flushQueue()` goes AFTER the effect you are waiting for, never straight after the rename
+
+`flushQueue` appends a no-op to the operation queue and awaits the queue's promise chain, so it only covers what is **already enqueued at the moment it is called**. The handler enqueues its work from the vault's `rename` / `delete` event — i.e. *after* `app.fileManager.renameFile(...)` has resolved. A suite that calls `flushQueue()` on the line after the rename therefore drains an **empty** queue and returns in microseconds, having waited for nothing, and then reads vault state while the operation is still in flight.
+
+It fails intermittently rather than always, which is what makes it dangerous: `canvas-partial-write-guard` passed 2 of 3 isolated runs that way, and the third read a transiently re-serialized canvas (`T923-P40`). The order that actually works is: rename → `waitUntil` the observable effect (the moved attachment), which proves the operation is underway → **then** `flushQueue()`, which now waits for the remainder of that same operation → then assert.
+
+Do not paper over this with a longer timeout on an unrelated wait. `canvas-partial-write-guard` was green for exactly that accidental reason — a 10-second wait for a notice that never appeared — and deleting the dead wait is what exposed the race underneath it.
+
 ### The rename/delete regression suites, and how they were ported
 
 Seven suites came from `obsidian-custom-attachment-location` when it stopped registering a rename/delete handler (`T881-P40`); each pins a real reported issue against that plugin's tracker, and each one's header names its issue. Six landed as files, the seventh was folded into an existing one:
