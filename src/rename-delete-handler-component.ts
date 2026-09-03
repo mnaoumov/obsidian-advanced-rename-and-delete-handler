@@ -272,7 +272,6 @@ interface RenameDeleteHandlerComponentConstructorParams {
   readonly abortSignalComponent: AbortSignalComponent;
   readonly app: App;
   readonly linkUpdateProgressReporter?: LinkUpdateProgressReporter;
-  readonly pluginId: string;
   readonly pluginNoticeComponent: PluginNoticeComponent;
   readonly resourceLockComponent: null | ResourceLockComponent;
   settingsBuilder(this: void): Partial<RenameDeleteHandlerSettings>;
@@ -1465,10 +1464,6 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
    */
   protected readonly linkUpdateProgressReporter: LinkUpdateProgressReporter | null;
   /**
-   * The plugin ID used to identify this handler among the registered rename/delete handlers.
-   */
-  protected readonly pluginId: string;
-  /**
    * The notice component used to report updated links to the user.
    */
   protected readonly pluginNoticeComponent: PluginNoticeComponent;
@@ -1506,7 +1501,6 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     this.app = params.app;
     this.linkUpdateProgressReporter = params.linkUpdateProgressReporter ?? null;
     this.resourceLockComponent = params.resourceLockComponent;
-    this.pluginId = params.pluginId;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.settingsBuilder = params.settingsBuilder;
     this.settingsManager = new SettingsManager(this.settingsBuilder);
