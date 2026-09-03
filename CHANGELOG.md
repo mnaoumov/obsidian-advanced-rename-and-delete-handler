@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.3.0
+
+- **Behaviour change:** `rescueAttachmentUsedByMultipleNotesMode` now defaults to `Prompt`. Users who already enabled *Should rescue shared attachments* are asked which note adopts a tied attachment, instead of the rescue silently stalling.
+- docs(agents): anchor the replayFolderDeletion reference to a symbol, not a line
+- docs(agents): correct the deviation note, and drop the dead field it would have documented
+- test(screenshots-desktop-capture): restore the settings-panel store screenshot
+- test(canvas-partial-write-guard): drop the Cancel-click workaround and fix the race it hid
+- feat: add a manual vault-wide Delete empty folders command
+- feat(rescue): keep a designated attachment unit folder whole on delete
+- feat(rescue): ask which note adopts a tied attachment, instead of stalling
+
 ## 1.2.0
 
 - chore(deps): sweep onto obsidian-dev-utils 98, integration-testing 12 and test-mocks 5
