@@ -25,6 +25,14 @@ It fails intermittently rather than always, which is what makes it dangerous: `c
 
 Do not paper over this with a longer timeout on an unrelated wait. `canvas-partial-write-guard` was green for exactly that accidental reason — a 10-second wait for a notice that never appeared — and deleting the dead wait is what exposed the race underneath it.
 
+### A suite hands back the plugin settings it staged, because they outlive the file
+
+One `npm run test:integration:desktop` (or `:android`) drives **every** suite against **one** Obsidian instance. The vault is temporary and fresh per run, but the app — and with it the loaded plugin and the settings it holds — outlives each test file. Eleven suites write settings through `api.migrateSettings` to stage what they are about to test, and their `finally` blocks put back `attachmentFolderPath` and `alwaysUpdateLinks` while leaving the plugin settings exactly where they left them.
+
+That would be survivable if the file order were fixed. It is not: vitest's default sequencer runs previously **failed** files first and then previously **slowest** first, from a cache every run rewrites — so the order changes run to run with nothing in the repo changing. `shared-attachment-tie` stages exactly the two values `settings-migration` proposes (`notePriorities: ['.md']` plus `shouldHandleDeletions: true`), so whenever it sorted ahead, that proposal changed nothing, `PluginApiImpl.migrateSettings` returned on its `rows.length === 0` path **without opening a dialog**, and `settings-migration` spent 20 seconds waiting for a dialog that was never coming. That was the aggregate failing about half its runs, on `main` as readily as on any branch.
+
+So every settings-driving suite snapshots in `beforeAll` and hands back in `afterAll`, through `src/settings-snapshot.integration-helper.ts`. Give any new suite that writes settings the same pair. And never write a `waitUntil` that *insists* on the migration dialog: a proposal matching what the plugin already holds opens none, so settle on `isSettled || document.querySelector('.modal-container') !== null` the way each suite's `applySettings` helper does.
+
 ### The rename/delete regression suites, and how they were ported
 
 Seven suites came from `obsidian-custom-attachment-location` when it stopped registering a rename/delete handler (`T881-P40`); each pins a real reported issue against that plugin's tracker, and each one's header names its issue. Six landed as files, the seventh was folded into an existing one:

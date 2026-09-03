@@ -1,9 +1,18 @@
 import { evalInObsidian } from 'obsidian-integration-testing';
 import {
+  afterAll,
+  beforeAll,
   describe,
   expect,
   it
 } from 'vitest';
+
+import type { PluginSettingsSnapshot } from './settings-snapshot.integration-helper.ts';
+
+import {
+  readPluginSettings,
+  writePluginSettings
+} from './settings-snapshot.integration-helper.ts';
 
 /*
  * Renaming a note refreshes the display text of a link whose alias equals the note's OLD base name:
@@ -54,6 +63,22 @@ interface RenameAliasResult {
   readonly referencingNoteContentBefore: string;
   readonly resolvedLinkPath: null | string;
 }
+
+/*
+ * This plugin's settings outlive each test file — one run drives every suite against one Obsidian instance —
+ * so what this suite stages must not become the starting point of whichever file the sequencer runs next.
+ * Handed back the way the `finally` blocks below hand back `attachmentFolderPath`. See
+ * `settings-snapshot.integration-helper.ts`.
+ */
+let originalSettings: PluginSettingsSnapshot;
+
+beforeAll(async () => {
+  originalSettings = await readPluginSettings();
+});
+
+afterAll(async () => {
+  await writePluginSettings(originalSettings);
+});
 
 describe('Renaming a note whose backlink aliases its old base name', () => {
   it('refreshes the alias to the new base name', async () => {
