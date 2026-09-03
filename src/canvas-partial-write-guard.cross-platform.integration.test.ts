@@ -23,11 +23,6 @@ import {
  * `{}`-shaped transient Advanced Canvas leaves mid-initialization cannot be staged headlessly; that half is
  * the second, deliberately skipped case below.
  *
- * The refusal to write is permanent, but the library reads a skipped write as "retry", so the operation
- * spins and raises a standing notice with a Cancel button. That is [[T894-P1]], found by this suite; the
- * suite clicks the Cancel when it appears, both because that is the affordance a real user has and because
- * it releases the shared queue for the suites that run after it.
- *
  * Ported from `obsidian-custom-attachment-location`, which deleted the suite when it stopped registering a
  * rename/delete handler. Rewritten rather than copied: the original assigned to a settings object it found by
  * walking the plugin's component tree and configured that plugin's own `attachmentFolderPath`, while here
@@ -199,31 +194,6 @@ describe('Moving a partial canvas', () => {
           await app.fileManager.renameFile(canvas, DST_CANVAS);
 
           /*
-           * The guard's refusal to write is permanent, but the library reads it as "retry", so the operation
-           * spins and offers the user a standing "Cancel" notice — measured, and tracked as [[T894-P1]].
-           * Clicking it is the real affordance a user has here, and it is what releases the shared queue for
-           * the rest of the run. Waited for tolerantly and clicked only if it appears, so this suite keeps
-           * passing once that retry is fixed and no notice is raised at all.
-           */
-          try {
-            await waitUntil({
-              message: 'the stuck-operation notice offers its Cancel button',
-              predicate: () => document.querySelector('.notice button') !== null,
-              timeoutInMilliseconds: EFFECT_TIMEOUT_IN_MILLISECONDS
-            });
-          } catch {
-            // No notice: the retry no longer spins, which is the outcome T894-P1 is for.
-          }
-
-          for (const noticeButtonEl of document.querySelectorAll('button')) {
-            if (noticeButtonEl.closest('.notice')) {
-              noticeButtonEl.click();
-            }
-          }
-
-          // The handler moves the attachment on its own queue, which this drains.
-          await flushQueue();
-          /*
            * The timeout is swallowed deliberately: an attachment that never moves must be reported by the
            * path assertions below, which name where it actually is, rather than as an opaque wait failure.
            */
@@ -236,6 +206,16 @@ describe('Moving a partial canvas', () => {
           } catch {
             // Reported by the path assertions instead.
           }
+
+          /*
+           * Drained AFTER the move, not before. `flushQueue` appends a no-op and awaits the queue's promise
+           * chain, so it only covers what is ALREADY enqueued when it is called — and the handler enqueues
+           * its operation from the vault's `rename` event, after `renameFile` has resolved. Draining first
+           * therefore drains an empty queue and returns at once, leaving the canvas to be read while the
+           * operation is still in flight and intermittently catching a transient re-serialized copy. Waiting
+           * for the moved attachment proves the operation is underway; this waits for the rest of it.
+           */
+          await flushQueue();
 
           const movedCanvas = app.vault.getFileByPath(DST_CANVAS);
           if (!movedCanvas) {
