@@ -1,9 +1,18 @@
 import { evalInObsidian } from 'obsidian-integration-testing';
 import {
+  afterAll,
+  beforeAll,
   describe,
   expect,
   it
 } from 'vitest';
+
+import type { PluginSettingsSnapshot } from './settings-snapshot.integration-helper.ts';
+
+import {
+  readPluginSettings,
+  writePluginSettings
+} from './settings-snapshot.integration-helper.ts';
 
 /*
  * One of the two deliberate holes in `FileManagerRunAsyncLinkUpdatePatchComponent`'s suppression of
@@ -55,6 +64,22 @@ interface MigrationApiLike {
 interface PluginWithApiLike {
   readonly api: MigrationApiLike;
 }
+
+/*
+ * This plugin's settings outlive each test file — one run drives every suite against one Obsidian instance —
+ * so what this suite stages must not become the starting point of whichever file the sequencer runs next.
+ * Handed back the way the `finally` blocks below hand back `attachmentFolderPath`. See
+ * `settings-snapshot.integration-helper.ts`.
+ */
+let originalSettings: PluginSettingsSnapshot;
+
+beforeAll(async () => {
+  originalSettings = await readPluginSettings();
+});
+
+afterAll(async () => {
+  await writePluginSettings(originalSettings);
+});
 
 describe('A rename inside a foreign plugin\'s locked transaction', () => {
   it('is left alone by this plugin, native link update and all', async () => {

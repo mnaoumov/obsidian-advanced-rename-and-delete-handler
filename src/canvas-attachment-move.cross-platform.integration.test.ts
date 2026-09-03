@@ -1,9 +1,18 @@
 import { evalInObsidian } from 'obsidian-integration-testing';
 import {
+  afterAll,
+  beforeAll,
   describe,
   expect,
   it
 } from 'vitest';
+
+import type { PluginSettingsSnapshot } from './settings-snapshot.integration-helper.ts';
+
+import {
+  readPluginSettings,
+  writePluginSettings
+} from './settings-snapshot.integration-helper.ts';
 
 /*
  * Moving a `.canvas` moves the attachment it embeds, and rewrites the canvas's own file-node reference to
@@ -59,6 +68,22 @@ interface MigrationApiLike {
 interface PluginWithApiLike {
   readonly api: MigrationApiLike;
 }
+
+/*
+ * This plugin's settings outlive each test file — one run drives every suite against one Obsidian instance —
+ * so what this suite stages must not become the starting point of whichever file the sequencer runs next.
+ * Handed back the way the `finally` blocks below hand back `attachmentFolderPath`. See
+ * `settings-snapshot.integration-helper.ts`.
+ */
+let originalSettings: PluginSettingsSnapshot;
+
+beforeAll(async () => {
+  originalSettings = await readPluginSettings();
+});
+
+afterAll(async () => {
+  await writePluginSettings(originalSettings);
+});
 
 describe('Moving a canvas', () => {
   it('moves the attachment it embeds and rewrites the file-node reference', async () => {
