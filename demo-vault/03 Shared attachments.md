@@ -50,6 +50,14 @@ Manual equivalent: toggle **Should rescue shared attachments** in the plugin's s
 
 Where "the adopting note's attachment folder" actually is depends on your vault. The plugin asks Obsidian, so a vault running an attachment-location plugin gets that plugin's answer and a plain vault gets the folder configured in **Settings -> Files and links**.
 
+## When the attachment is really a folder
+
+Some attachments are a directory tree rather than a file. A page saved from a browser arrives as `page.html` next to a `page_files/` folder holding its images and stylesheets; a drawing arrives next to the images it references. Move the one linked file and the rest is left behind, so what reaches the surviving note is broken.
+
+Which folders count is not this plugin's decision — it is a setting of whichever plugin owns your vault's attachment paths, and that plugin publishes the answer on the vault for anything relocating attachments to read. [Custom Attachment Location](https://github.com/mnaoumov/obsidian-custom-attachment-location) calls them **attachment unit folders**. With no such plugin installed nothing is designated, and every attachment travels alone, which is what the rest of this page describes.
+
+When one is designated, the rescue moves the **whole folder** into the surviving note's attachment folder, under its own name — so the tree's shape, and the relative links inside it, survive the move. There is no setting here to turn on: the designation is read from your attachment-location plugin, and honouring it is not optional. A designated folder is also never split the other way: if it already sits where the rescue would have put it, the linked file is left inside it rather than pulled out into the folder above.
+
 ## When more than one note survives
 
 With a single surviving note there is nothing to decide. With several, the plugin needs to be told which one wins, and by default it is told nothing — so it leaves the attachment alone rather than guessing.

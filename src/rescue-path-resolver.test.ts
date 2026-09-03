@@ -31,6 +31,12 @@ interface CreateResolverOptions {
   readonly frontmatter?: Record<string, unknown>;
   readonly hasNoFileCache?: boolean;
   readonly settings?: Partial<PluginSettings>;
+
+  /**
+   * The folders an attachment-location plugin has designated as attachment units, published on the vault.
+   * Omitted means no plugin published a designation, which is what a plain vault answers.
+   */
+  readonly unitFolderPaths?: readonly string[];
 }
 
 const ATTACHMENT_PATH = 'attachments/image.png';
@@ -75,6 +81,17 @@ function createResolver(options: CreateResolverOptions = {}): RescuePathResolver
       getFileCache: vi.fn().mockReturnValue(options.hasNoFileCache ? null : { frontmatter: options.frontmatter ?? null })
     }),
     vault: strictProxy<AppOriginal['vault']>({
+      /*
+       * Present but bare unless the test says otherwise: a vault with no attachment-location plugin still
+       * has this method, it simply carries no designation, and that is the answer the resolver falls back
+       * on.
+       */
+      getAvailablePathForAttachments: Object.assign(
+        vi.fn(),
+        options.unitFolderPaths
+          ? { checkIsAttachmentUnitFolder: (folderPath: string): boolean => options.unitFolderPaths?.includes(folderPath) ?? false }
+          : {}
+      ),
       getFileByPath: vi.fn((path: string) => path === ATTACHMENT_PATH ? attachmentFile : noteFiles.get(path) ?? null)
     })
   });
@@ -89,13 +106,13 @@ describe('RescuePathResolver', () => {
   it('should decline when the rescue is switched off', async () => {
     const resolver = createResolver();
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/keeper.md']
     });
 
-    expect(rescuePath).toBeNull();
+    expect(rescueDestination).toBeNull();
     expect(mockGetAttachmentFolderPath).not.toHaveBeenCalled();
   });
 
@@ -105,25 +122,55 @@ describe('RescuePathResolver', () => {
       settings: { shouldRescueSharedAttachments: true }
     });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/keeper.md']
     });
 
-    expect(rescuePath).toBeNull();
+    expect(rescueDestination).toBeNull();
   });
 
   it('should move the attachment into the only surviving note\'s folder', async () => {
     const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/keeper.md']
     });
 
-    expect(rescuePath).toBe(`${ATTACHMENT_FOLDER_PATH}/image.png`);
+    expect(rescueDestination).toEqual({ attachmentPath: `${ATTACHMENT_FOLDER_PATH}/image.png`, unitFolderPath: null });
+  });
+
+  it('should name the attachment unit folder the vault designates', async () => {
+    const resolver = createResolver({
+      settings: { shouldRescueSharedAttachments: true },
+      unitFolderPaths: ['attachments']
+    });
+
+    const rescueDestination = await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
+      survivingNotePaths: ['Notes/keeper.md']
+    });
+
+    expect(rescueDestination).toEqual({ attachmentPath: `${ATTACHMENT_FOLDER_PATH}/image.png`, unitFolderPath: 'attachments' });
+  });
+
+  it('should name no unit folder when the designation covers none of the attachment\'s ancestors', async () => {
+    const resolver = createResolver({
+      settings: { shouldRescueSharedAttachments: true },
+      unitFolderPaths: ['somewhere else']
+    });
+
+    const rescueDestination = await resolver.getRescuePath({
+      attachmentPath: ATTACHMENT_PATH,
+      rescueDecisionScope: new RescueDecisionScope(),
+      survivingNotePaths: ['Notes/keeper.md']
+    });
+
+    expect(rescueDestination).toEqual({ attachmentPath: `${ATTACHMENT_FOLDER_PATH}/image.png`, unitFolderPath: null });
   });
 
   it('should resolve the destination for the note that adopts the attachment', async () => {
@@ -150,13 +197,13 @@ describe('RescuePathResolver', () => {
       }
     });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/plain.md', 'Notes/tagged.md']
     });
 
-    expect(rescuePath).toBe(`${ATTACHMENT_FOLDER_PATH}/image.png`);
+    expect(rescueDestination).toEqual({ attachmentPath: `${ATTACHMENT_FOLDER_PATH}/image.png`, unitFolderPath: null });
     expect(mockGetAttachmentFolderPath).toHaveBeenCalledWith(expect.objectContaining({
       notePathOrFile: 'Notes/tagged.md'
     }));
@@ -172,13 +219,13 @@ describe('RescuePathResolver', () => {
       }
     });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/uncached.md', 'Notes/drawing.excalidraw.md']
     });
 
-    expect(rescuePath).toBe(`${ATTACHMENT_FOLDER_PATH}/image.png`);
+    expect(rescueDestination).toEqual({ attachmentPath: `${ATTACHMENT_FOLDER_PATH}/image.png`, unitFolderPath: null });
   });
 
   it('should decline without asking when several notes survive and the mode is to leave it in place', async () => {
@@ -189,26 +236,26 @@ describe('RescuePathResolver', () => {
       }
     });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
     });
 
-    expect(rescuePath).toBeNull();
+    expect(rescueDestination).toBeNull();
     expect(mockShowRescueAmbiguityModal).not.toHaveBeenCalled();
   });
 
   it('should not ask when the deletion reported no surviving note at all', async () => {
     const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: []
     });
 
-    expect(rescuePath).toBeNull();
+    expect(rescueDestination).toBeNull();
     expect(mockShowRescueAmbiguityModal).not.toHaveBeenCalled();
   });
 
@@ -220,13 +267,13 @@ describe('RescuePathResolver', () => {
       }
     });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/plain.md', 'Notes/drawing.excalidraw.md']
     });
 
-    expect(rescuePath).toBe(`${ATTACHMENT_FOLDER_PATH}/image.png`);
+    expect(rescueDestination).toEqual({ attachmentPath: `${ATTACHMENT_FOLDER_PATH}/image.png`, unitFolderPath: null });
     expect(mockGetAttachmentFolderPath).toHaveBeenCalledWith(expect.objectContaining({
       notePathOrFile: 'Notes/drawing.excalidraw.md'
     }));
@@ -236,13 +283,13 @@ describe('RescuePathResolver', () => {
     const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
     mockShowRescueAmbiguityModal.mockResolvedValue({ adoptingNotePath: 'Notes/b.md', shouldUseSameActionForRest: false });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
     });
 
-    expect(rescuePath).toBe(`${ATTACHMENT_FOLDER_PATH}/image.png`);
+    expect(rescueDestination).toEqual({ attachmentPath: `${ATTACHMENT_FOLDER_PATH}/image.png`, unitFolderPath: null });
     expect(mockGetAttachmentFolderPath).toHaveBeenCalledWith(expect.objectContaining({
       notePathOrFile: 'Notes/b.md'
     }));
@@ -251,13 +298,13 @@ describe('RescuePathResolver', () => {
   it('should leave the attachment in place when the user declines to pick', async () => {
     const resolver = createResolver({ settings: { shouldRescueSharedAttachments: true } });
 
-    const rescuePath = await resolver.getRescuePath({
+    const rescueDestination = await resolver.getRescuePath({
       attachmentPath: ATTACHMENT_PATH,
       rescueDecisionScope: new RescueDecisionScope(),
       survivingNotePaths: ['Notes/a.md', 'Notes/b.md']
     });
 
-    expect(rescuePath).toBeNull();
+    expect(rescueDestination).toBeNull();
     expect(mockShowRescueAmbiguityModal).toHaveBeenCalledTimes(1);
   });
 

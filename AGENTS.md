@@ -59,6 +59,22 @@ It lives in its own module rather than in `src/rename-delete-handler-component.t
 
 A blocking modal inside a queued delete is safe: `addToQueue` passes `pluginNoticeComponent: null` to `runWithTimeoutNotice`, so the 60s timeout resolves to `onTimeoutWithoutNotice` — a debug log, no notice, and **no abort**.
 
+### An attachment unit folder is moved BEFORE the walk, never by the per-file rescue hook
+
+`src/attachment-unit-folder-rescue.cross-platform.integration.test.ts` pins the rescue of a whole attachment unit folder (OCAL #70). The obvious implementation — have `didRescueStillUsedAttachment` move the folder when the hook names one — cannot work, and reading `deleteIfNotUsed` in `obsidian-dev-utils/obsidian/vault-delete` is what says so:
+
+- It lists a folder's children **as paths** (`listSafe` → `adapter.list`) and walks them in order, files first. Inside a unit folder the linked attachment is one file among siblings.
+- A sibling reached **before** it has no surviving backlink, so it is deleted outright — the unit is already gutted by the time the hook fires.
+- A sibling reached **after** it no longer resolves, which reports the child as kept, so `canDelete` is false all the way up and the folder the user actually deleted is left standing.
+
+So `rescueStillUsedUnitFolders` runs ahead of both walking `deleteIfNotUsed` calls (`DeleteHandler.handleNoteDeletion`, `DeleteProtectionPatchComponent.replayFolderDeletion`) and moves the folders out first; the walk then sees a tree that genuinely no longer holds them. It captures its candidates as **paths, not `TFile`s** — a `TFile` follows its own move, so it cannot answer whether an earlier iteration already carried it out of the tree.
+
+`DeleteHandler.handle()`'s third `deleteIfNotUsed` call deletes ONE named attachment with no walk at all, so there the hook moves the folder itself. That is why `rescueStillUsedFile` is bound with the walked folder's path: `planUnitFolderMove` refuses to move a unit folder that IS — or contains — the folder being deleted, which would turn a delete into a move of something larger than the user named, and the vault root (`''`) is the honest answer when nothing is being walked.
+
+**A designated unit is never split, in either direction.** When the hook names a unit folder and no move is planned — it is already at its destination, or it cannot move — the attachment is kept where it is rather than pulled out of the folder into the one above. The second case in the suite pins exactly that; without the guard the lone file is rescued out of a unit that was already home.
+
+The demo vault documents this in prose only. Demonstrating it needs a plugin publishing `app.vault.getAvailablePathForAttachments.checkIsAttachmentUnitFolder`, and the demo vault deliberately runs this plugin alone; the integration suite stubs that member instead, the same stand-in the performance suite uses for `.extended`.
+
 ## Deviations from the shared plugin architecture (G51)
 
 - **`src/rename-delete-handler-component.ts` is a copy of the same file in `obsidian-dev-utils`, not an import.** This plugin owns the rename/delete implementation; the library keeps its copy only until the five plugins that still import it have shipped versions that do not, at which point ODU's copy is deleted. Until then the two files exist side by side and a fix has to be applied to whichever one is still live. The copy differs from ODU's deliberately: the registry registration, the multi-plugin settings merge and the `shouldInvokeHandler` election are all removed, because there is exactly one contributor here.
