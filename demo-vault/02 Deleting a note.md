@@ -48,6 +48,32 @@ await require('/demoSetup.ts').changeSettings(app, { emptyFolderBehavior: 'Keep'
 
 Manual equivalent: pick a different **Empty folder behavior** in the plugin's settings.
 
+## The folders that are already empty
+
+The setting above only ever sees the folder a deletion has just emptied. A vault that has been in use for a while is usually carrying others — left by a deletion made before the setting was turned on, or by a move made outside Obsidian — and nothing goes looking for them.
+
+The **Advanced Rename and Delete Handler: Delete empty folders** command is that look. It walks the whole vault, deepest folder first, so a folder holding nothing but empty folders goes in the same pass as its children.
+
+It sweeps whatever **Empty folder behavior** is set to, `Keep` included. That setting decides the fate of a folder emptied *incidentally*, by a deletion you asked for something else; running this command is you naming the folders themselves. A command called `Delete empty folders` that quietly did nothing would be the more surprising answer.
+
+What it does leave alone: any folder still holding a file — including a file you cannot see, such as a `.DS_Store` — and anything your include and exclude lists put out of the plugin's reach ([05 Limiting the scope](<./05 Limiting the scope.md>)). The folders go to your trash, wherever Obsidian is configured to put it, so a sweep can be undone.
+
+```code-button
+---
+caption: Make some empty folders to find
+---
+await require('/demoSetup.ts').createEmptyFolders(app);
+```
+
+```code-button
+---
+caption: Sweep every empty folder in the vault
+---
+require('/demoSetup.ts').deleteEmptyFolders(app);
+```
+
+Manual equivalent: run **Advanced Rename and Delete Handler: Delete empty folders** from the Command Palette.
+
 ## When a moved attachment lands on an existing file
 
 Moving a note can send an attachment into a folder that already holds a file of that name.

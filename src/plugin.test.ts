@@ -225,6 +225,16 @@ describe('Plugin', () => {
       plugin.unload();
     });
 
+    it('should register the delete empty folders command', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      const addCommandSpy = vi.spyOn(plugin, 'addCommand');
+
+      await plugin.onload();
+
+      expect(addCommandSpy).toHaveBeenCalledWith(expect.objectContaining({ id: 'delete-empty-folders' }));
+      plugin.unload();
+    });
+
     it('should not disable itself', async () => {
       const app = createConfiguredApp();
       const plugin = new Plugin(app, PLUGIN_MANIFEST);

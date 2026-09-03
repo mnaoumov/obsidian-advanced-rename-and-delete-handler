@@ -18,6 +18,9 @@ const ARCHIVE_TARGET_PATH = 'Archive/Target note.md';
 const ILLUSTRATED_PATH = 'Notes/Illustrated note.md';
 const SHARED_PATH = 'Notes/Shares the picture.md';
 
+// Deepest last, so each folder's parent already exists when it is created.
+const EMPTY_FOLDER_PATHS = ['Leftovers', 'Leftovers/Deeper'];
+
 interface DemoSettingsPatch {
   emptyFolderBehavior?: string;
   excludePaths?: string[];
@@ -49,6 +52,49 @@ export async function changeSettings(app: App, patch: DemoSettingsPatch): Promis
     settings: patch
   });
   new Notice('Applied.');
+}
+
+/**
+ * Creates a small tree of folders holding nothing, so the sweep below has something to find.
+ *
+ * A button has to make them because git cannot ship an empty folder, which is also why a vault that has
+ * been in use for a while accumulates them without anyone noticing.
+ *
+ * Manual equivalent: create `Leftovers` and `Leftovers/Deeper` from the File Explorer, and put no file in
+ * either.
+ *
+ * @param app - The Obsidian app.
+ */
+export async function createEmptyFolders(app: App): Promise<void> {
+  for (const folderPath of EMPTY_FOLDER_PATHS) {
+    if (!app.vault.getFolderByPath(folderPath)) {
+      await app.vault.createFolder(folderPath);
+    }
+  }
+
+  new Notice('Created. Read the tree below, then press the sweep button.');
+}
+
+/**
+ * Runs the vault-wide sweep that removes every folder holding nothing.
+ *
+ * Manual equivalent: the **Advanced Rename and Delete Handler: Delete empty folders** entry in the
+ * Command Palette.
+ *
+ * @param app - The Obsidian app.
+ */
+export function deleteEmptyFolders(app: App): void {
+  /*
+   * Checked rather than fired and forgotten: `executeCommandById` answers `false` for an id it does not
+   * know, so a command renamed out from under this button would otherwise do nothing at all and still look
+   * like it worked — including to the suite that clicks every button in this vault.
+   */
+  const wasCommandFound = app.commands.executeCommandById(`${PLUGIN_ID}:delete-empty-folders`);
+  if (!wasCommandFound) {
+    throw new Error('The Delete empty folders command is not registered. Is the plugin enabled?');
+  }
+
+  new Notice('Sweeping. Read the tree below once the progress notice goes away.');
 }
 
 /**

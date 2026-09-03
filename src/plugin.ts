@@ -9,6 +9,7 @@ import type { InstalledConflict } from './conflicting-plugins.ts';
 import type { AdvancedRenameAndDeleteHandlerApi } from './plugin-api.ts';
 import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
 
+import { DeleteEmptyFoldersCommandHandler } from './command-handlers/delete-empty-folders-command-handler.ts';
 import { findInstalledConflicts } from './conflicting-plugins.ts';
 import { PluginApiImpl } from './plugin-api-impl.ts';
 import {
@@ -109,6 +110,12 @@ export class Plugin extends PluginBase {
     );
 
     await this.commandHandlerComponent.registerCommandHandlers(() => [
+      new DeleteEmptyFoldersCommandHandler({
+        abortSignal: this.abortSignalComponent.abortSignal,
+        app: this.app,
+        pluginNoticeComponent: this.pluginNoticeComponent,
+        pluginSettingsComponent
+      }),
       new OpenDemoVaultCommandHandler({
         app: this.app,
         pluginId: this.manifest.id,
