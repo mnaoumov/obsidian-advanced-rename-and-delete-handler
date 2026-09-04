@@ -32,11 +32,6 @@ interface FileManagerWithLinkUpdate {
 
 interface PluginsLike {
   disablePlugin: ReturnType<typeof vi.fn>;
-  getPlugin: ReturnType<typeof vi.fn>;
-}
-
-interface PluginsMock {
-  plugins: PluginsLike;
 }
 
 interface RenameDeleteHandlerComponentParams {
@@ -126,11 +121,10 @@ function createConfiguredApp(): App {
   appMock.workspace.onLayoutReady = vi.fn((callback: () => void) => {
     callback();
   });
-  // The strict App mock throws on an unmocked member, so `plugins` is assigned wholesale before use.
-  castTo<PluginsMock>(appMock).plugins = {
-    disablePlugin: vi.fn().mockResolvedValue(undefined),
-    getPlugin: vi.fn().mockReturnValue(null)
-  };
+  // `disablePlugin` is the one member of the registry obsidian-test-mocks does not model - it covers the
+  // Honest core and leaves the enable/disable lifecycle to throw - so it is seeded on the real registry
+  // Rather than replacing it. `getPlugin` needs nothing: the mock already answers `null`.
+  castTo<PluginsLike>(appMock.plugins).disablePlugin = vi.fn().mockResolvedValue(undefined);
   const app = appMock.asOriginalType__();
   castTo<FileManagerWithLinkUpdate>(app).fileManager.runAsyncLinkUpdate = vi.fn();
   return app;
@@ -241,7 +235,7 @@ describe('Plugin', () => {
 
       await plugin.onload();
 
-      expect(castTo<PluginsMock>(app).plugins.disablePlugin).not.toHaveBeenCalled();
+      expect(castTo<PluginsLike>(app.plugins).disablePlugin).not.toHaveBeenCalled();
       plugin.unload();
     });
   });
@@ -257,7 +251,7 @@ describe('Plugin', () => {
 
       await plugin.onload();
 
-      expect(castTo<PluginsMock>(app).plugins.disablePlugin).toHaveBeenCalledWith(PLUGIN_MANIFEST.id);
+      expect(castTo<PluginsLike>(app.plugins).disablePlugin).toHaveBeenCalledWith(PLUGIN_MANIFEST.id);
       plugin.unload();
     });
 
