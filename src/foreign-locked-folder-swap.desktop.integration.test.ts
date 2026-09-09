@@ -144,7 +144,16 @@ describe('A folder swap owned by another plugin', () => {
         const CONTROL_ROOT = 'rdh-swap-control';
         const REPORTER_ROOT = 'rdh-swap-reporter';
         const TEMPORARY_FOLDER = 'rdh-swap-temp';
-        const WAIT_TIMEOUT_IN_MILLISECONDS = 30_000;
+        /*
+         * Sized so this closure's declared waits SUM to under the transport's ~30s per-closure cap, rather
+         * than each one sitting AT it. At 30_000 the ceiling was unreachable: the eval is killed at the cap
+         * first, and reported as a bare transport timeout naming the harness rather than the wait that
+         * actually overran. What is waited on here lands in well under a second, so a budget this size
+         * costs nothing — a wait that can genuinely run long belongs in `pollInObsidian`, with Node doing
+         * the waiting — as the two note-move suites here still need to, since a 30-attachment move can genuinely
+         * outrun the cap no matter what ceiling is written above it.
+         */
+        const WAIT_TIMEOUT_IN_MILLISECONDS = 12_000;
 
         const plugin = app.plugins.plugins[pluginId];
         if (!plugin) {

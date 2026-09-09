@@ -45,7 +45,17 @@ const PLUGIN_ID = 'advanced-rename-and-delete-handler';
  */
 const SOURCE_PLUGIN_ID = 'obsidian-custom-attachment-location';
 
-const WAIT_TIMEOUT_IN_MILLISECONDS = 30_000;
+/*
+ * Under the transport's ~30s per-closure cap, not at it. The old 30_000 was a ceiling this wait could never
+ * reach: the whole eval would be killed at the cap first, and reported as a bare transport timeout naming
+ * the harness rather than this wait.
+ *
+ * The wait stays INSIDE the closure rather than moving to `pollInObsidian`, because what it waits on lives
+ * in the page and cannot cross the boundary: a live `migrateSettings` promise and the `isSettled` flag its
+ * handlers set. Carrying those across polls would mean a `contextId` and three extra round trips in the
+ * `afterAll` of every suite here, to watch a settings write and a modal that settle in well under a second.
+ */
+const WAIT_TIMEOUT_IN_MILLISECONDS = 20_000;
 
 interface MigrateSettingsParamsLike {
   readonly proposedSettings: PluginSettingsSnapshot;
