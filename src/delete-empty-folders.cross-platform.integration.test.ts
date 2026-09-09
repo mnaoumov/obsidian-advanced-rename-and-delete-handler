@@ -60,7 +60,20 @@ describe('The manual Delete empty folders sweep', () => {
         const NESTED_EMPTY = `${TOP_EMPTY}/nested`;
         const POPULATED = `${ROOT}/populated`;
         const POPULATED_NOTE = `${POPULATED}/kept.md`;
-        const WAIT_TIMEOUT_IN_MILLISECONDS = 30_000;
+        /*
+         * Under the transport's ~30s per-closure cap, not at it. The old 30_000 was a ceiling this closure
+         * could never reach: the transport would kill the whole eval first, and report it as a bare script
+         * timeout naming the harness rather than this wait.
+         *
+         * This wait deliberately stays INSIDE the closure, unlike the rest of the fleet's long waits, which
+         * moved to `pollInObsidian`. The reason is the one the file header already gives: this sweep acts on
+         * the WHOLE shared vault, and a sibling suite's fixture is exposed only between its `createFolder`
+         * and the first file it puts there. Inside one closure that window is microseconds. Split across
+         * Node-side polls it becomes transport round trips, which is precisely the "empty folder across an
+         * await" the header warns needs a vault of its own. The sweep it waits on is fire-and-forget and
+         * lands in well under a second, so a budget far below the cap costs nothing.
+         */
+        const WAIT_TIMEOUT_IN_MILLISECONDS = 20_000;
 
         const plugin = app.plugins.plugins[pluginId];
         if (!plugin) {
