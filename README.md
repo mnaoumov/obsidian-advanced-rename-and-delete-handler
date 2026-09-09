@@ -115,7 +115,7 @@ if (api && !api.isPathIgnored(file.path) && !api.isTreatedAsAttachment(file.path
 
 ## Installation
 
-The plugin is not yet listed in [the official Community Plugins repository](https://community.obsidian.md/plugins). Until it is, install it as a beta release.
+The plugin is available in [the official Community Plugins repository](https://community.obsidian.md/plugins/advanced-rename-and-delete-handler).
 
 ### Beta versions
 
@@ -129,7 +129,7 @@ To install the latest beta release of this plugin (regardless if it is available
 
 By default, debug messages for this plugin are hidden.
 
-To show them, run the following command:
+To show them, run the following command in the `DevTools Console`:
 
 ```js
 window.DEBUG.enable('advanced-rename-and-delete-handler');
