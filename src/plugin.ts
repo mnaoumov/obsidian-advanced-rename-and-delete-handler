@@ -1,4 +1,10 @@
+import type {
+  PluginConflict,
+  PluginGateComponent
+} from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
+
 import { OpenDemoVaultCommandHandler } from 'obsidian-dev-utils/obsidian/command-handlers/open-demo-vault-command-handler';
+import { PluginConflictSeverity } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from 'obsidian-dev-utils/obsidian/components/plugin-settings-tab-component';
 import { PluginDataHandler } from 'obsidian-dev-utils/obsidian/data-handler';
 import { PluginBase } from 'obsidian-dev-utils/obsidian/plugin/plugin';
@@ -11,6 +17,11 @@ import type { RenameDeleteHandlerSettings } from './rename-delete-handler-compon
 
 import { DeleteEmptyFoldersCommandHandler } from './command-handlers/delete-empty-folders-command-handler.ts';
 import { findInstalledConflicts } from './conflicting-plugins.ts';
+import {
+  CONSISTENT_ATTACHMENTS_AND_LINKS_DELETE_EMPTY_FOLDERS_VERSION_RANGE,
+  CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
+  CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME
+} from './consistent-attachments-and-links.ts';
 import { PluginApiImpl } from './plugin-api-impl.ts';
 import {
   PLUGIN_API_CONTRACT,
@@ -20,6 +31,9 @@ import { PluginSettingsComponent as PluginSettingsComponentImpl } from './plugin
 import { PluginSettingsTab } from './plugin-settings-tab.ts';
 import { RenameDeleteHandlerComponent } from './rename-delete-handler-component.ts';
 import { RescuePathResolver } from './rescue-path-resolver.ts';
+
+const DELETE_EMPTY_FOLDERS_OVERLAP_REASON = 'Both plugins add a Delete empty folders command, so it appears'
+  + ' twice in the command palette and running either copy sweeps the vault again.';
 
 export class Plugin extends PluginBase {
   /**
@@ -36,6 +50,18 @@ export class Plugin extends PluginBase {
   }
 
   private pluginApi: null | PluginApiImpl = null;
+
+  protected override getPluginConflicts(): PluginConflict[] {
+    return [
+      {
+        conflictingVersionRange: CONSISTENT_ATTACHMENTS_AND_LINKS_DELETE_EMPTY_FOLDERS_VERSION_RANGE,
+        pluginId: CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
+        pluginName: CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME,
+        reason: DELETE_EMPTY_FOLDERS_OVERLAP_REASON,
+        severity: PluginConflictSeverity.Warn
+      }
+    ];
+  }
 
   protected override async onloadImpl(): Promise<void> {
     /*
@@ -62,6 +88,8 @@ export class Plugin extends PluginBase {
       new PluginSettingsTabComponent({
         plugin: this,
         pluginSettingsTab: new PluginSettingsTab({
+          // Deliberately lazy: the gate is what loads this method, so the base has not assigned it yet.
+          getPluginGateComponent: (): PluginGateComponent => this.pluginGateComponent,
           plugin: this,
           pluginSettingsComponent
         })

@@ -4,8 +4,10 @@ import type {
   SettingDefinition,
   SettingDefinitionGroup,
   SettingDefinitionItem,
+  SettingDefinitionRender,
   SettingGroup
 } from 'obsidian';
+import type { PluginGateComponent } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
 import type { PluginSettingsComponentBase } from 'obsidian-dev-utils/obsidian/components/plugin-settings-component';
 
 import { noopAsync } from 'obsidian-dev-utils/function';
@@ -47,10 +49,17 @@ const EXPECTED_HEADINGS = [
   'Scope'
 ];
 
+// The overlap banner's single input. Whether it writes anything is what decides the row's fate, since the
+// Row hides itself when the library renders nothing.
+const renderConflictWarningBannerMock = vi.fn<(containerEl: HTMLElement) => void>();
+
 let app: AppOriginal;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // `clearAllMocks` drops the recorded calls but keeps any implementation set by an earlier test, and
+  // Whether this one writes into the container is exactly what the overlap row's tests differ on.
+  renderConflictWarningBannerMock.mockReset();
   app = App.createConfigured__().asOriginalType__();
   vi.spyOn(PluginSettingsTabBase.prototype, 'bind').mockImplementation((params) => params.valueComponent);
 });
@@ -68,8 +77,14 @@ describe('PluginSettingsTab', () => {
     expect(headings(createTab())).toEqual(EXPECTED_HEADINGS);
   });
 
-  it('should put every row inside a group, leaving none loose at the top level', () => {
-    for (const item of createTab().getSettingDefinitions()) {
+  // The overlap banner is the one deliberate exception, and it has to be: Obsidian never calls `display()`
+  // Once the declarative definitions are non-empty, so a banner can only reach the tab as a row, and a row
+  // Inside a group would read as a setting of that group.
+  it('should put every row inside a group, leaving none loose at the top level but the overlap banner', () => {
+    const [banner, ...rest] = createTab().getSettingDefinitions();
+
+    expect(banner).not.toHaveProperty('items');
+    for (const item of rest) {
       expect(item).toHaveProperty('items');
     }
   });
@@ -84,8 +99,10 @@ describe('PluginSettingsTab', () => {
     ]);
   });
 
-  it('should give every row a name', () => {
-    for (const name of settingNames(createTab())) {
+  // The banner is excluded rather than renamed: a name is what a row shows beside its control, and a bare
+  // Host with no control has nothing to put one against.
+  it('should give every setting row a name', () => {
+    for (const name of settingRowNames(createTab())) {
       expect(name).not.toBe('');
     }
   });
@@ -112,6 +129,52 @@ describe('PluginSettingsTab', () => {
     expect(Object.values(addedOptions[0] ?? {})).toEqual(['Keep', 'Delete', 'Delete with empty parents']);
   });
 
+  describe('Consistent Attachments and Links overlap banner', () => {
+    it('should hand the row element to the plugin gate, emptied first', () => {
+      renderConflictWarningBannerMock.mockImplementation((containerEl) => {
+        containerEl.createDiv({ text: 'Overlap' });
+      });
+      const tab = createTab();
+      const setting = new SettingEx(tab.containerEl);
+      setting.setName('Leftover');
+
+      bannerRow(tab).render(setting, castTo<SettingGroup>(null));
+
+      expect(renderConflictWarningBannerMock).toHaveBeenCalledWith(setting.settingEl);
+      expect(setting.settingEl.textContent).toBe('Overlap');
+    });
+
+    // The library renders nothing when no overlap holds, and an empty row is still a row — a divider and a
+    // Block of padding with nothing in it.
+    it('should hide itself when the gate renders no banner', () => {
+      const tab = createTab();
+      const setting = new SettingEx(tab.containerEl);
+
+      bannerRow(tab).render(setting, castTo<SettingGroup>(null));
+
+      // `isShown()` reads `offsetParent`, which jsdom never populates, so the display style is what a test
+      // Can actually see here.
+      expect(setting.settingEl.style.display).toBe('none');
+    });
+
+    it('should stay visible once the gate has rendered a banner', () => {
+      renderConflictWarningBannerMock.mockImplementation((containerEl) => {
+        containerEl.createDiv({ text: 'Overlap' });
+      });
+      const tab = createTab();
+      const setting = new SettingEx(tab.containerEl);
+
+      bannerRow(tab).render(setting, castTo<SettingGroup>(null));
+
+      expect(setting.settingEl.style.display).toBe('');
+    });
+
+    // It is not a setting, so it must not surface as one in Obsidian's settings search.
+    it('should stay out of the settings search', () => {
+      expect(bannerRow(createTab()).searchable).toBe(false);
+    });
+  });
+
   it('should expose no setting the plugin does not own', () => {
     const tab = createTab();
 
@@ -120,6 +183,21 @@ describe('PluginSettingsTab', () => {
     expect(boundKeys()).toHaveLength(EXPECTED_PROPERTY_NAMES.length);
   });
 });
+
+/**
+ * Finds the overlap banner — the one row declared loose at the top level, ahead of every group.
+ *
+ * @param tab - The settings tab.
+ * @returns The row.
+ */
+function bannerRow(tab: PluginSettingsTab): SettingDefinitionRender {
+  const [banner] = tab.getSettingDefinitions();
+  if (!banner || 'items' in banner) {
+    throw new Error('The overlap banner row is missing.');
+  }
+
+  return castTo<SettingDefinitionRender>(banner);
+}
 
 function boundKeys(): unknown[] {
   return vi.mocked(PluginSettingsTabBase.prototype.bind).mock.calls.map((call) => call[0].propertyName);
@@ -147,6 +225,10 @@ function createTab(): PluginSettingsTab {
     manifest: { id: 'advanced-rename-and-delete-handler' }
   });
   return new PluginSettingsTab({
+    getPluginGateComponent: (): PluginGateComponent =>
+      strictProxy<PluginGateComponent>({
+        renderConflictWarningBanner: renderConflictWarningBannerMock
+      }),
     plugin,
     pluginSettingsComponent: createMockSettingsComponent()
   });
@@ -231,11 +313,12 @@ function renderRows(tab: PluginSettingsTab): void {
 }
 
 /**
- * Reads the names of the declared rows, descending into the groups.
+ * Reads the names of the rows that are actual SETTINGS — every row inside a group, so the loose overlap
+ * banner is left out.
  *
  * @param tab - The settings tab.
  * @returns The names.
  */
-function settingNames(tab: PluginSettingsTab): string[] {
-  return flattenRows(tab.getSettingDefinitions()).map((row) => row.name);
+function settingRowNames(tab: PluginSettingsTab): string[] {
+  return groups(tab).flatMap((group) => flattenRows(castTo<SettingDefinitionItem[]>(group.items ?? []))).map((row) => row.name);
 }

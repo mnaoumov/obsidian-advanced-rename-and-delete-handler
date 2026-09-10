@@ -2,8 +2,13 @@ import type {
   App,
   PluginManifest
 } from 'obsidian';
+import type {
+  PluginConflict,
+  PluginGateComponent
+} from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
 
 import { castTo } from 'obsidian-dev-utils/object-utils';
+import { PluginConflictSeverity } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from 'obsidian-dev-utils/obsidian/components/plugin-settings-tab-component';
 import { ensureNonNullable } from 'obsidian-dev-utils/type-guards';
 import { App as AppCls } from 'obsidian-test-mocks/obsidian';
@@ -30,12 +35,26 @@ interface FileManagerWithLinkUpdate {
   fileManager: FileManagerLike;
 }
 
+// `getPluginConflicts` is protected on the base — the declaration is for the library, not for callers —
+// So a test reads it through a probe rather than widening the plugin's own surface.
+interface PluginConflictsProbe {
+  getPluginConflicts(): PluginConflict[];
+}
+
+interface PluginGateProbe {
+  readonly pluginGateComponent: PluginGateComponent;
+}
+
 interface PluginsLike {
   disablePlugin: ReturnType<typeof vi.fn>;
 }
 
 interface RenameDeleteHandlerComponentParams {
   settingsBuilder(): Partial<RenameDeleteHandlerSettings>;
+}
+
+interface SettingsTabParamsProbe {
+  getPluginGateComponent(): PluginGateComponent;
 }
 
 const {
@@ -88,6 +107,8 @@ vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
 
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { PluginSettingsComponent } from './plugin-settings-component.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { PluginSettingsTab } from './plugin-settings-tab.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { Plugin } from './plugin.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
@@ -236,6 +257,43 @@ describe('Plugin', () => {
       await plugin.onload();
 
       expect(castTo<PluginsLike>(app.plugins).disablePlugin).not.toHaveBeenCalled();
+      plugin.unload();
+    });
+
+    it('should declare the Delete empty folders overlap as a warning rather than a refusal to run', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      await plugin.onload();
+
+      const conflicts = castTo<PluginConflictsProbe>(plugin).getPluginConflicts();
+
+      expect(conflicts).toHaveLength(1);
+      const [conflict] = conflicts;
+      expect(conflict?.pluginId).toBe('consistent-attachments-and-links');
+      expect(conflict?.pluginName).toBe('Consistent Attachments and Links');
+      // A duplicated palette entry is annoying, not vault-corrupting, so both plugins keep running —
+      // Unlike the rename/delete overlap, which this plugin refuses outright.
+      expect(conflict?.severity).toBe(PluginConflictSeverity.Warn);
+      // Bounded BELOW as well: under 4.0.0 that plugin still owns a rename/delete handler, and the
+      // Refusal above already owns that message.
+      expect(conflict?.conflictingVersionRange).toBe('>=4.0.0 <5.0.0');
+      expect(conflict?.reason).toContain('Delete empty folders');
+      plugin.unload();
+    });
+
+    // The settings tab takes an ACCESSOR rather than the gate itself: the gate is what loads the feature
+    // Surface, so at the moment `onloadImpl` builds the tab the base has not assigned it yet, and reading
+    // It eagerly throws.
+    it('should hand the settings tab a lazy route to the plugin gate', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      await plugin.onload();
+
+      const call = vi.mocked(PluginSettingsTab).mock.calls[0];
+      if (!call) {
+        throw new Error('PluginSettingsTab was not constructed.');
+      }
+
+      const params = castTo<SettingsTabParamsProbe>(call[0]);
+      expect(params.getPluginGateComponent()).toBe(castTo<PluginGateProbe>(plugin).pluginGateComponent);
       plugin.unload();
     });
   });
