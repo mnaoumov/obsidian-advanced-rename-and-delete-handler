@@ -1,4 +1,6 @@
 import type { SettingDefinitionItem } from 'obsidian';
+import type { PluginGateComponent } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
+import type { PluginSettingsTabBaseConstructorParams } from 'obsidian-dev-utils/obsidian/plugin/plugin-settings-tab';
 
 import { appendCodeBlock } from 'obsidian-dev-utils/obsidian/html-element';
 import { PluginSettingsTabBase } from 'obsidian-dev-utils/obsidian/plugin/plugin-settings-tab';
@@ -8,7 +10,28 @@ import type { PluginSettings } from './plugin-settings.ts';
 import { RescueAttachmentUsedByMultipleNotesMode } from './plugin-settings.ts';
 import { EmptyFolderBehavior } from './rename-delete-handler-component.ts';
 
+interface PluginSettingsTabConstructorParams extends PluginSettingsTabBaseConstructorParams<PluginSettings> {
+  /**
+   * Reaches the plugin's gate, LAZILY.
+   *
+   * A function rather than the component itself, because there is no component to hand over yet when this
+   * tab is built: the base assigns `pluginGateComponent` only after the gate has loaded, and the gate loads
+   * the feature surface — `onloadImpl`, where this tab is constructed — as it loads. Reading it eagerly
+   * therefore throws. By the time a row renders, the assignment has long since happened.
+   *
+   * @returns The plugin gate component.
+   */
+  getPluginGateComponent(this: void): PluginGateComponent;
+}
+
 export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
+  private readonly getPluginGateComponent: (this: void) => PluginGateComponent;
+
+  public constructor(params: PluginSettingsTabConstructorParams) {
+    super(params);
+    this.getPluginGateComponent = params.getPluginGateComponent;
+  }
+
   /**
    * Groups the rows by the event they answer to, rather than listing twelve toggles flat.
    *
@@ -23,6 +46,23 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
    */
   protected override getSettingDefinitionItems(): SettingDefinitionItem[] {
     return [
+      // The overlap banner has to travel as a ROW: Obsidian renders the declarative definitions and never
+      // Calls `display()` once `getSettingDefinitions()` is non-empty, so there is no container to write
+      // Into otherwise. The row body is emptied first, leaving the Setting element as a bare host for the
+      // Banner. It cannot take a `visible` predicate yet: the library version this plugin compiles against
+      // Renders the banner but does not expose whether there is one to render, so the row is hidden after
+      // The fact when nothing was written into it. Swap this for a predicate once the floor moves.
+      this.settingEx({
+        name: '',
+        render: (setting) => {
+          setting.settingEl.empty();
+          this.getPluginGateComponent().renderConflictWarningBanner(setting.settingEl);
+          if (!setting.settingEl.hasChildNodes()) {
+            setting.settingEl.hide();
+          }
+        },
+        searchable: false
+      }),
       this.settingGroupEx({
         heading: 'Renames and moves',
         items: [

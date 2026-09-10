@@ -22,6 +22,11 @@ import type { App } from 'obsidian';
 
 import { lt } from 'semver';
 
+import {
+  CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
+  CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME
+} from './consistent-attachments-and-links.ts';
+
 /**
  * A plugin that used to own its own rename/delete handling.
  */
@@ -72,8 +77,8 @@ const CONFLICTING_PLUGINS: readonly ConflictingPlugin[] = [
   },
   {
     minSupportedVersion: '4.0.0',
-    name: 'Consistent Attachments and Links',
-    pluginId: 'consistent-attachments-and-links'
+    name: CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME,
+    pluginId: CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID
   },
   {
     minSupportedVersion: '5.0.0',
