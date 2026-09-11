@@ -6,10 +6,12 @@ import type {
   PluginConflict,
   PluginGateComponent
 } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
+import type { PluginApiDeclaration } from 'obsidian-dev-utils/obsidian/plugin/plugin-api';
 
 import { castTo } from 'obsidian-dev-utils/object-utils';
 import { PluginConflictSeverity } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from 'obsidian-dev-utils/obsidian/components/plugin-settings-tab-component';
+import { watchPluginApi } from 'obsidian-dev-utils/obsidian/plugin/plugin-api';
 import { ensureNonNullable } from 'obsidian-dev-utils/type-guards';
 import { App as AppCls } from 'obsidian-test-mocks/obsidian';
 import {
@@ -33,6 +35,11 @@ interface FileManagerLike {
 
 interface FileManagerWithLinkUpdate {
   fileManager: FileManagerLike;
+}
+
+// `getPluginApis` is protected on the base for the same reason.
+interface PluginApisProbe {
+  getPluginApis(): PluginApiDeclaration[];
 }
 
 // `getPluginConflicts` is protected on the base — the declaration is for the library, not for callers —
@@ -70,8 +77,12 @@ const {
 vi.mock('./plugin-settings-component.ts', async () => {
   const { Component } = await vi.importActual<ComponentModuleActual>('obsidian');
   const { PluginSettings } = await vi.importActual<typeof import('./plugin-settings.ts')>('./plugin-settings.ts');
+  const { noopAsync } = await vi.importActual<typeof import('obsidian-dev-utils/function')>('obsidian-dev-utils/function');
   class PluginSettingsComponent extends Component {
     public settings = new PluginSettings();
+
+    // A `data.json` is present, so the first-load notice stays quiet; its own suite covers the other case.
+    public wasDataFileMissingOnInitialLoad = false;
 
     public editAndSave(editor: (settings: unknown) => unknown): Promise<void> {
       return Promise.resolve(editor(this.settings)).then(() => undefined);
@@ -79,6 +90,10 @@ vi.mock('./plugin-settings-component.ts', async () => {
 
     public isNoteEx(path: string): boolean {
       return path.endsWith('.md');
+    }
+
+    public whenLoadedFromFile(): Promise<void> {
+      return noopAsync();
     }
   }
   return { PluginSettingsComponent };
@@ -105,6 +120,12 @@ vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
   };
 });
 
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { FirstLoadNoticeComponent } from './first-load-notice-component.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { PLUGIN_API_VERSION } from './plugin-api.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { PluginDependentsComponent } from './plugin-dependents-component.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { PluginSettingsComponent } from './plugin-settings-component.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
@@ -177,6 +198,48 @@ describe('Plugin', () => {
       plugin.unload();
     });
 
+    // Declared rather than published by hand, so the base revokes it with the feature surface and names its
+    // Contract version in the `plugin-loaded` broadcast a dependent's gate listens for.
+    it('should declare its API for the base to publish', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      await plugin.onload();
+
+      const declarations = castTo<PluginApisProbe>(plugin).getPluginApis();
+
+      expect(declarations).toHaveLength(1);
+      expect(declarations[0]?.api).toBe(plugin.api);
+      expect(declarations[0]?.apiVersion).toBe(PLUGIN_API_VERSION);
+      plugin.unload();
+    });
+
+    it('should publish its API where a dependent\'s watch can see it', async () => {
+      const app = createConfiguredApp();
+      const plugin = new Plugin(app, PLUGIN_MANIFEST);
+      await plugin.onload();
+
+      const apiRef = watchPluginApi<object>({
+        apiVersionRange: '^1.1.0',
+        app,
+        component: plugin,
+        pluginId: PLUGIN_MANIFEST.id
+      });
+
+      expect(apiRef.value).not.toBeNull();
+      plugin.unload();
+    });
+
+    it('should add the first-load notice and the dependents tracker', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      const addChildSpy = vi.spyOn(plugin, 'addChild');
+
+      await plugin.onload();
+
+      const addedChildren = addChildSpy.mock.calls.map((call) => call[0]);
+      expect(addedChildren.some((child) => child instanceof FirstLoadNoticeComponent)).toBe(true);
+      expect(addedChildren.some((child) => child instanceof PluginDependentsComponent)).toBe(true);
+      plugin.unload();
+    });
+
     it('should construct the rename/delete handler', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
 
@@ -193,9 +256,9 @@ describe('Plugin', () => {
 
       const params = ensureNonNullable(renameDeleteHandlerStub.mock.calls[0])[0];
       const builtSettings = params.settingsBuilder();
-      expect(builtSettings.shouldHandleRenames).toBe(true);
+      expect(builtSettings.shouldHandleRenames).toBe(false);
       expect(builtSettings.shouldUpdateFileNameAliases).toBe(true);
-      expect(builtSettings.shouldRenameAttachmentFolder).toBe(true);
+      expect(builtSettings.shouldRenameAttachmentFolder).toBe(false);
       expect(builtSettings.shouldHandleDeletions).toBe(false);
       expect(builtSettings.shouldDeleteConflictingAttachments).toBe(false);
       plugin.unload();
@@ -319,6 +382,15 @@ describe('Plugin', () => {
       await plugin.onload();
 
       expect(renameDeleteHandlerStub).not.toHaveBeenCalled();
+      plugin.unload();
+    });
+
+    it('should declare no API', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+
+      await plugin.onload();
+
+      expect(castTo<PluginApisProbe>(plugin).getPluginApis()).toEqual([]);
       plugin.unload();
     });
 

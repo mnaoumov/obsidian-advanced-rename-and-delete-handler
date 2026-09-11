@@ -58,9 +58,14 @@ export class PluginSettings {
   public shouldHandleDeletions = false;
 
   /**
-   * Whether renames and moves are handled at all. This is the plugin's reason to exist, so it is on.
+   * Whether renames and moves are handled at all — this plugin's link update, replacing Obsidian's own.
+   *
+   * Off by default, together with {@link shouldRenameAttachmentFolder}, so that installing this plugin
+   * changes nothing on its own. Other plugins declare it as a dependency and ask the user to install it,
+   * and being asked to install something has to be harmless. The values such a plugin used to hold arrive
+   * through `migrateSettings` instead, where the user is shown what would change.
    */
-  public shouldHandleRenames = true;
+  public shouldHandleRenames = false;
 
   /**
    * Whether renaming a note renames the attachment files that travel with it.
@@ -69,8 +74,11 @@ export class PluginSettings {
 
   /**
    * Whether renaming a note renames (or moves) its attachment folder alongside it.
+   *
+   * Independent of {@link shouldHandleRenames}: the attachment move runs with link updates off, so this
+   * has to be off as well for a fresh install to do nothing.
    */
-  public shouldRenameAttachmentFolder = true;
+  public shouldRenameAttachmentFolder = false;
 
   /**
    * Whether an attachment that survives a deletion — because another note still references it — is

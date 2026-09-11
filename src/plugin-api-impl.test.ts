@@ -97,7 +97,7 @@ describe('PluginApiImpl.migrateSettings', () => {
     const result = await createPluginApi(createApp({})).migrateSettings({
       // Both already hold these values, so there is nothing to review.
       proposedSettings: {
-        shouldHandleRenames: true,
+        shouldHandleRenames: false,
         treatAsAttachmentExtensions: ['.excalidraw.md']
       },
       sourcePluginId: SOURCE_PLUGIN_ID
@@ -179,9 +179,9 @@ describe('PluginApiImpl.getSettings', () => {
       notePriorities: [],
       shouldDeleteConflictingAttachments: false,
       shouldHandleDeletions: false,
-      shouldHandleRenames: true,
+      shouldHandleRenames: false,
       shouldRenameAttachmentFiles: false,
-      shouldRenameAttachmentFolder: true,
+      shouldRenameAttachmentFolder: false,
       shouldRescueSharedAttachments: false,
       shouldUpdateFileNameAliases: true,
       treatAsAttachmentExtensions: ['.excalidraw.md']

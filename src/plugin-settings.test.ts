@@ -9,18 +9,22 @@ import { PluginSettings } from './plugin-settings.ts';
 
 describe('PluginSettings', () => {
   describe('defaults', () => {
-    it('should handle renames, which is the reason the plugin exists', () => {
-      expect(new PluginSettings().shouldHandleRenames).toBe(true);
+    it('should leave renames to Obsidian, so installing the plugin changes nothing on its own', () => {
+      expect(new PluginSettings().shouldHandleRenames).toBe(false);
     });
 
-    it('should update file name aliases', () => {
+    it('should update file name aliases once renames are handled', () => {
       expect(new PluginSettings().shouldUpdateFileNameAliases).toBe(true);
     });
 
-    it('should rename the attachment folder but not the attachment files', () => {
+    it('should move neither the attachment folder nor the attachment files', () => {
+      /*
+       * The folder move runs even with renames left to Obsidian, so it is the second switch a fresh install
+       * has to hold off for the plugin to do nothing.
+       */
       const settings = new PluginSettings();
 
-      expect(settings.shouldRenameAttachmentFolder).toBe(true);
+      expect(settings.shouldRenameAttachmentFolder).toBe(false);
       expect(settings.shouldRenameAttachmentFiles).toBe(false);
     });
 

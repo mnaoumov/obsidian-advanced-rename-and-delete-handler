@@ -2,13 +2,13 @@ import type {
   PluginConflict,
   PluginGateComponent
 } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
+import type { PluginApiDeclaration } from 'obsidian-dev-utils/obsidian/plugin/plugin-api';
 
 import { OpenDemoVaultCommandHandler } from 'obsidian-dev-utils/obsidian/command-handlers/open-demo-vault-command-handler';
 import { PluginConflictSeverity } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from 'obsidian-dev-utils/obsidian/components/plugin-settings-tab-component';
 import { PluginDataHandler } from 'obsidian-dev-utils/obsidian/data-handler';
 import { PluginBase } from 'obsidian-dev-utils/obsidian/plugin/plugin';
-import { publishPluginApi } from 'obsidian-dev-utils/obsidian/plugin/plugin-api';
 import { PluginEventSourceImpl } from 'obsidian-dev-utils/obsidian/plugin/plugin-event-source';
 
 import type { InstalledConflict } from './conflicting-plugins.ts';
@@ -22,11 +22,13 @@ import {
   CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
   CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME
 } from './consistent-attachments-and-links.ts';
+import { FirstLoadNoticeComponent } from './first-load-notice-component.ts';
 import { PluginApiImpl } from './plugin-api-impl.ts';
 import {
   PLUGIN_API_CONTRACT,
   PLUGIN_API_VERSION
 } from './plugin-api.ts';
+import { PluginDependentsComponent } from './plugin-dependents-component.ts';
 import { PluginSettingsComponent as PluginSettingsComponentImpl } from './plugin-settings-component.ts';
 import { PluginSettingsTab } from './plugin-settings-tab.ts';
 import { RenameDeleteHandlerComponent } from './rename-delete-handler-component.ts';
@@ -50,6 +52,29 @@ export class Plugin extends PluginBase {
   }
 
   private pluginApi: null | PluginApiImpl = null;
+
+  /**
+   * Declares the API for the base to publish, once `onloadImpl` has built it.
+   *
+   * Published by the base rather than by hand, so that the handle is revoked with the feature surface and
+   * the `plugin-loaded` broadcast carries the contract version — which is what a plugin declaring this one
+   * as a dependency waits for. Nothing is declared when the plugin refused to run.
+   *
+   * @returns The declaration, or none.
+   */
+  protected override getPluginApis(): PluginApiDeclaration[] {
+    if (!this.pluginApi) {
+      return [];
+    }
+
+    return [
+      {
+        api: this.pluginApi,
+        apiVersion: PLUGIN_API_VERSION,
+        contract: PLUGIN_API_CONTRACT
+      }
+    ];
+  }
 
   protected override getPluginConflicts(): PluginConflict[] {
     return [
@@ -85,12 +110,31 @@ export class Plugin extends PluginBase {
     this.pluginSettingsComponent = pluginSettingsComponent;
 
     this.addChild(
+      new FirstLoadNoticeComponent({
+        app: this.app,
+        pluginId: this.manifest.id,
+        pluginNoticeComponent: this.pluginNoticeComponent,
+        pluginSettingsComponent
+      })
+    );
+
+    // Subscribed here, before `getPluginApis()` publishes the API a dependent's gate waits for — so no
+    // Dependent can finish loading, and announce it, before this is listening.
+    const pluginDependentsComponent = this.addChild(
+      new PluginDependentsComponent({
+        app: this.app,
+        pluginId: this.manifest.id
+      })
+    );
+
+    this.addChild(
       new PluginSettingsTabComponent({
         plugin: this,
         pluginSettingsTab: new PluginSettingsTab({
           // Deliberately lazy: the gate is what loads this method, so the base has not assigned it yet.
           getPluginGateComponent: (): PluginGateComponent => this.pluginGateComponent,
           plugin: this,
+          pluginDependentsComponent,
           pluginSettingsComponent
         })
       })
@@ -99,12 +143,6 @@ export class Plugin extends PluginBase {
     this.pluginApi = new PluginApiImpl({
       app: this.app,
       pluginSettingsComponent
-    });
-    publishPluginApi({
-      api: this.pluginApi,
-      apiVersion: PLUGIN_API_VERSION,
-      contract: PLUGIN_API_CONTRACT,
-      plugin: this
     });
 
     const rescuePathResolver = new RescuePathResolver({
