@@ -9,9 +9,14 @@ import type {
 } from 'obsidian';
 import type { PluginGateComponent } from 'obsidian-dev-utils/obsidian/components/plugin-gate-component';
 import type { PluginSettingsComponentBase } from 'obsidian-dev-utils/obsidian/components/plugin-settings-component';
+import type { PluginLifecycleEventPayload } from 'obsidian-dev-utils/obsidian/plugin/plugin-lifecycle-events';
 
 import { noopAsync } from 'obsidian-dev-utils/function';
 import { castTo } from 'obsidian-dev-utils/object-utils';
+import {
+  PLUGIN_LOADED_EVENT_NAME,
+  PLUGIN_UNLOADED_EVENT_NAME
+} from 'obsidian-dev-utils/obsidian/plugin/plugin-lifecycle-events';
 import { PluginSettingsTabBase } from 'obsidian-dev-utils/obsidian/plugin/plugin-settings-tab';
 import { SettingEx } from 'obsidian-dev-utils/obsidian/setting-ex';
 import { strictProxy } from 'obsidian-dev-utils/strict-proxy';
@@ -24,6 +29,7 @@ import {
   vi
 } from 'vitest';
 
+import { PluginDependentsComponent } from './plugin-dependents-component.ts';
 import { PluginSettingsTab } from './plugin-settings-tab.ts';
 import { PluginSettings } from './plugin-settings.ts';
 
@@ -43,17 +49,37 @@ const EXPECTED_PROPERTY_NAMES = [
   'excludePaths'
 ];
 
+const DEPENDENTS_HEADING = 'Plugins that depend on this one';
+
 const EXPECTED_HEADINGS = [
+  DEPENDENTS_HEADING,
   'Renames and moves',
   'Deletions',
   'Scope'
 ];
+
+const PLUGIN_ID = 'advanced-rename-and-delete-handler';
+
+interface AppSettingLike {
+  openTabById: ReturnType<typeof vi.fn>;
+}
+
+// The obsidian-test-mocks button: its DOM element is inert, and the registered handler runs through here.
+interface ButtonComponentMock {
+  readonly buttonEl: HTMLButtonElement;
+  simulateClick__(): void;
+}
+
+interface SettingLike {
+  setting: AppSettingLike;
+}
 
 // The overlap banner's single input. Whether it writes anything is what decides the row's fate, since the
 // Row hides itself when the library renders nothing.
 const renderConflictWarningBannerMock = vi.fn<(containerEl: HTMLElement) => void>();
 
 let app: AppOriginal;
+let pluginDependentsComponent: PluginDependentsComponent;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -61,7 +87,11 @@ beforeEach(() => {
   // Whether this one writes into the container is exactly what the overlap row's tests differ on.
   renderConflictWarningBannerMock.mockReset();
   app = App.createConfigured__().asOriginalType__();
+  // `app.setting` is the one member the dependents row reaches that obsidian-test-mocks does not model.
+  castTo<SettingLike>(app).setting = { openTabById: vi.fn() };
   vi.spyOn(PluginSettingsTabBase.prototype, 'bind').mockImplementation((params) => params.valueComponent);
+  pluginDependentsComponent = new PluginDependentsComponent({ app, pluginId: PLUGIN_ID });
+  pluginDependentsComponent.load();
 });
 
 describe('PluginSettingsTab', () => {
@@ -73,7 +103,7 @@ describe('PluginSettingsTab', () => {
     expect(boundKeys()).toEqual(EXPECTED_PROPERTY_NAMES);
   });
 
-  it('should group the rows under the three headings', () => {
+  it('should group the rows under the dependents heading and the three settings headings', () => {
     expect(headings(createTab())).toEqual(EXPECTED_HEADINGS);
   });
 
@@ -89,14 +119,52 @@ describe('PluginSettingsTab', () => {
     }
   });
 
-  it('should lead each group with the switch that turns its behavior on', () => {
+  it('should lead each settings group with the switch that turns its behavior on', () => {
     const tab = createTab();
 
     expect(firstRowNamePerGroup(tab)).toEqual([
+      'Required by',
       'Should handle renames',
       'Should handle deletions',
       'Treat as attachment extensions'
     ]);
+  });
+
+  describe('Plugins that depend on this one', () => {
+    it('should be hidden while no enabled plugin depends on this one', () => {
+      expect(isVisible(dependentsGroup(createTab()))).toBe(false);
+    });
+
+    it('should ignore a plugin that loads without depending on this one', () => {
+      announceLoaded({ dependencyPluginIds: ['some-other-plugin'], pluginId: 'unrelated', pluginName: 'Unrelated' });
+
+      expect(isVisible(dependentsGroup(createTab()))).toBe(false);
+    });
+
+    it('should show once a dependent has loaded, with one button per dependent in name order', () => {
+      announceLoaded({ dependencyPluginIds: [PLUGIN_ID], pluginId: 'zeta', pluginName: 'Zeta' });
+      announceLoaded({ dependencyPluginIds: [PLUGIN_ID], pluginId: 'alpha', pluginName: 'Alpha' });
+      const tab = createTab();
+
+      expect(isVisible(dependentsGroup(tab))).toBe(true);
+      expect(renderDependentsRow(tab).map((button) => button.buttonEl.textContent)).toEqual(['Alpha 1.0.0', 'Zeta 1.0.0']);
+    });
+
+    it('should open the dependent\'s own settings tab from its button', () => {
+      announceLoaded({ dependencyPluginIds: [PLUGIN_ID], pluginId: 'alpha', pluginName: 'Alpha' });
+
+      const [button] = renderDependentsRow(createTab());
+      button?.simulateClick__();
+
+      expect(castTo<SettingLike>(app).setting.openTabById).toHaveBeenCalledWith('alpha');
+    });
+
+    it('should drop a dependent once it unloads', () => {
+      announceLoaded({ dependencyPluginIds: [PLUGIN_ID], pluginId: 'alpha', pluginName: 'Alpha' });
+      app.workspace.trigger(PLUGIN_UNLOADED_EVENT_NAME, createPayload({ dependencyPluginIds: [PLUGIN_ID], pluginId: 'alpha', pluginName: 'Alpha' }));
+
+      expect(isVisible(dependentsGroup(createTab()))).toBe(false);
+    });
   });
 
   // The banner is excluded rather than renamed: a name is what a row shows beside its control, and a bare
@@ -184,6 +252,21 @@ describe('PluginSettingsTab', () => {
   });
 });
 
+interface PayloadParams {
+  readonly dependencyPluginIds: readonly string[];
+  readonly pluginId: string;
+  readonly pluginName: string;
+}
+
+/**
+ * Broadcasts a plugin finishing its load, exactly as every `obsidian-dev-utils` plugin does.
+ *
+ * @param params - The plugin to announce.
+ */
+function announceLoaded(params: PayloadParams): void {
+  app.workspace.trigger(PLUGIN_LOADED_EVENT_NAME, createPayload(params));
+}
+
 /**
  * Finds the overlap banner — the one row declared loose at the top level, ahead of every group.
  *
@@ -219,10 +302,20 @@ function createMockSettingsComponent(): PluginSettingsComponentBase<PluginSettin
   });
 }
 
+function createPayload(params: PayloadParams): PluginLifecycleEventPayload {
+  return {
+    apiVersions: [],
+    dependencyPluginIds: params.dependencyPluginIds,
+    pluginId: params.pluginId,
+    pluginName: params.pluginName,
+    pluginVersion: '1.0.0'
+  };
+}
+
 function createTab(): PluginSettingsTab {
   const plugin = strictProxy<Plugin>({
     app,
-    manifest: { id: 'advanced-rename-and-delete-handler' }
+    manifest: { id: PLUGIN_ID }
   });
   return new PluginSettingsTab({
     getPluginGateComponent: (): PluginGateComponent =>
@@ -230,8 +323,18 @@ function createTab(): PluginSettingsTab {
         renderConflictWarningBanner: renderConflictWarningBannerMock
       }),
     plugin,
+    pluginDependentsComponent,
     pluginSettingsComponent: createMockSettingsComponent()
   });
+}
+
+function dependentsGroup(tab: PluginSettingsTab): SettingDefinitionGroup {
+  const group = groups(tab).find((candidate) => candidate.heading === DEPENDENTS_HEADING);
+  if (!group) {
+    throw new Error('The dependents group is missing.');
+  }
+
+  return group;
 }
 
 /**
@@ -286,18 +389,40 @@ function headings(tab: PluginSettingsTab): string[] {
   return groups(tab).map((group) => group.heading ?? '');
 }
 
+function isVisible(group: SettingDefinitionGroup): boolean {
+  return typeof group.visible === 'function' ? group.visible() : group.visible ?? true;
+}
+
+/**
+ * Renders the dependents row and returns the buttons it added, in order.
+ *
+ * @param tab - The settings tab.
+ * @returns The buttons.
+ */
+function renderDependentsRow(tab: PluginSettingsTab): ButtonComponentMock[] {
+  const [row] = flattenRows(castTo<SettingDefinitionItem[]>(dependentsGroup(tab).items ?? []));
+  if (!row || !('render' in row)) {
+    throw new Error('The dependents row is missing.');
+  }
+
+  const setting = new SettingEx(tab.containerEl);
+  row.render(setting, castTo<SettingGroup>(null));
+  return setting.components.map((component) => castTo<ButtonComponentMock>(component));
+}
+
 /**
  * Renders the declared rows the way Obsidian does when the tab is opened: it descends into the groups,
- * applies the name and description, and runs each row's `render` callback.
+ * skips a group whose `visible` predicate says no, applies the name and description, and runs each row's
+ * `render` callback.
  *
- * No row in this tab declares a `visible` or `disabled` predicate, so the predicate-evaluating half of
- * G101's reference renderer is deliberately absent — it would be a branch no test can take, against a
- * 100% coverage gate. Add it back the moment a row grows a predicate.
+ * Only the dependents group declares a predicate, and no row declares `disabled`, so the `disabled` half of
+ * Obsidian's renderer is absent — it would be a branch no test can take, against a 100% coverage gate.
  *
  * @param tab - The settings tab.
  */
 function renderRows(tab: PluginSettingsTab): void {
-  for (const row of flattenRows(tab.getSettingDefinitions())) {
+  const visibleItems = tab.getSettingDefinitions().filter((item) => !('items' in item) || isVisible(castTo<SettingDefinitionGroup>(item)));
+  for (const row of flattenRows(visibleItems)) {
     if (!('render' in row)) {
       continue;
     }

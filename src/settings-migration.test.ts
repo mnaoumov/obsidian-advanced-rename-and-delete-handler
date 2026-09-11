@@ -72,7 +72,7 @@ describe('buildSettingsMigrationRows', () => {
       currentSettings: new PluginSettings(),
       proposedSettings: {
         shouldHandleDeletions: true,
-        shouldHandleRenames: true,
+        shouldHandleRenames: false,
         treatAsAttachmentExtensions: ['.excalidraw.md']
       }
     });
@@ -118,7 +118,7 @@ describe('applyMigratableSettings', () => {
 
     applyMigratableSettings(settings, { shouldHandleDeletions: true });
 
-    expect(settings.shouldHandleRenames).toBe(true);
+    expect(settings.shouldHandleRenames).toBe(false);
     expect(settings.notePriorities).toEqual([]);
   });
 

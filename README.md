@@ -40,6 +40,8 @@ A copy of the vault ships with every release. You can access it via any of the f
 
 ## What it does
 
+- **Nothing, until you turn it on.** A fresh install leaves renames and deletions to Obsidian and says so once, with a button to the settings. Other plugins ask you to install this one, and being asked to install something should never change how your vault behaves. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
+- **It tells you which plugins need it.** Its settings tab lists the enabled plugins that declare this one as a dependency, each with a button to that plugin's own settings — the answer to "why is this in my vault" before you remove it.
 - **Links follow a renamed or moved note**, including the display text of a link that was showing the old file name — while a link somebody gave their own words to is left alone. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
 - **Attachments travel with the note that owns them**, folder and all, when it is renamed or moved to another folder. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
 - **Deleting a note can clean up after it** — the attachments only that note used, and the folder the deletion leaves empty. Off by default, because each option removes something. A **Delete empty folders** command sweeps the whole vault for the ones already sitting there, left by deletions made before you turned any of this on. [02 Deleting a note](<./demo-vault/02 Deleting a note.md>)
@@ -112,6 +114,25 @@ if (api && !api.isPathIgnored(file.path) && !api.isTreatedAsAttachment(file.path
 - **`isTreatedAsAttachment(path)`** answers whether the path names an attachment despite its extension — `.excalidraw.md` being the case that motivated the setting.
 - **Use the two predicates rather than re-matching the arrays yourself.** Every plugin bundles its own copy of `obsidian-dev-utils`, so running the lists through your copy of the matching code is two copies that can drift apart; asking here keeps the matching in one place.
 - These arrived in contract `1.1.0`. That is purely additive, so `'^1'` still gets you them — but a vault running an older release will hand you an API without them, which is what `watchPluginApi`'s shape check is for.
+
+### Declaring this plugin as a dependency
+
+If your plugin cannot work without this one, say so rather than failing quietly once a user removes it. With `obsidian-dev-utils`' `PluginBase`, declare it and your `onloadImpl` does not run until this plugin is installed, enabled and new enough — your plugin explains what is missing and installs it in one click, and finishes loading the moment it arrives:
+
+```ts
+protected override getPluginDependencies(): PluginDependency[] {
+  return [
+    {
+      apiVersionRange: '^1.1.0',
+      pluginId: 'advanced-rename-and-delete-handler',
+      pluginName: 'Advanced Rename and Delete Handler',
+      reason: 'Moves each note\'s attachment folder with it when the note is renamed.'
+    }
+  ];
+}
+```
+
+Your plugin then appears in this plugin's settings tab under **Plugins that depend on this one**. Because this plugin does nothing until something is turned on, asking a user to install it is harmless; hand your old values over with `migrateSettings` (above) for the switches your users relied on.
 
 ## Installation
 

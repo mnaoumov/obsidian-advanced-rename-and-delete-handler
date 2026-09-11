@@ -5,6 +5,7 @@ import type { PluginSettingsTabBaseConstructorParams } from 'obsidian-dev-utils/
 import { appendCodeBlock } from 'obsidian-dev-utils/obsidian/html-element';
 import { PluginSettingsTabBase } from 'obsidian-dev-utils/obsidian/plugin/plugin-settings-tab';
 
+import type { PluginDependentsComponent } from './plugin-dependents-component.ts';
 import type { PluginSettings } from './plugin-settings.ts';
 
 import { RescueAttachmentUsedByMultipleNotesMode } from './plugin-settings.ts';
@@ -22,22 +23,35 @@ interface PluginSettingsTabConstructorParams extends PluginSettingsTabBaseConstr
    * @returns The plugin gate component.
    */
   getPluginGateComponent(this: void): PluginGateComponent;
+
+  /**
+   * The plugins that declare this one as a dependency, listed at the top of the tab.
+   */
+  readonly pluginDependentsComponent: PluginDependentsComponent;
 }
 
 export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
   private readonly getPluginGateComponent: (this: void) => PluginGateComponent;
+  private readonly pluginDependentsComponent: PluginDependentsComponent;
 
   public constructor(params: PluginSettingsTabConstructorParams) {
     super(params);
     this.getPluginGateComponent = params.getPluginGateComponent;
+    this.pluginDependentsComponent = params.pluginDependentsComponent;
   }
 
   /**
    * Groups the rows by the event they answer to, rather than listing twelve toggles flat.
    *
-   * Each group leads with the switch that turns the whole behavior on, so the rows under it read as its
-   * details — everything below `Should handle renames` is dead while that toggle is off, and the same for
-   * `Should handle deletions`. `Scope` is last because it narrows both of the groups above it.
+   * Each group leads with the switch that turns its behavior on, so the rows under it read as its details.
+   * For deletions that is the whole story — everything below `Should handle deletions` is dead while it is
+   * off. Renames are looser: `Should handle renames` governs the link update, while moving and renaming the
+   * attachments are switches of their own, because moving a note's attachments with it is useful whoever
+   * updates the links. `Scope` is last because it narrows both of the groups above it.
+   *
+   * The plugins depending on this one come first of all, when there are any: they are the answer to "why is
+   * this plugin in my vault", which is the question a user has when they open this tab wondering whether to
+   * remove it.
    *
    * The order within each group is unchanged from the flat tab, and matches the demo vault's own
    * progression: renaming, then deleting, then what counts as a note and how to limit the plugin.
@@ -64,6 +78,29 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
         searchable: false
       }),
       this.settingGroupEx({
+        heading: 'Plugins that depend on this one',
+        items: [
+          this.settingEx({
+            desc: 'These enabled plugins declare this one as a dependency. Disabling or uninstalling it stops them until it is back. Select one to open its settings.',
+            name: 'Required by',
+            render: (setting) => {
+              for (const dependent of this.pluginDependentsComponent.getDependents()) {
+                setting.addButton((button) => {
+                  button
+                    .setButtonText(`${dependent.pluginName} ${dependent.pluginVersion}`)
+                    .onClick(() => {
+                      this.app.setting.openTabById(dependent.pluginId);
+                    });
+                });
+              }
+            }
+          })
+        ],
+        // A predicate rather than a fixed value: this builder runs when the tab is registered, before any
+        // Dependent has loaded, while the predicate is evaluated each time the tab is shown.
+        visible: () => this.pluginDependentsComponent.getDependents().length > 0
+      }),
+      this.settingGroupEx({
         heading: 'Renames and moves',
         items: [
           this.settingEx({
@@ -72,7 +109,9 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
               f.createEl('br');
               f.appendText('When enabled, this plugin updates the links pointing at a renamed or moved file, replacing Obsidian\'s own link update.');
               f.createEl('br');
-              f.appendText('When disabled, Obsidian handles renames on its own and nothing below has any effect.');
+              f.appendText('When disabled, Obsidian updates the links on its own, and file name aliases are left as they are. Moving and renaming attachments are separate switches below, and work either way.');
+              f.createEl('br');
+              f.appendText('Off by default, like everything else here: installing this plugin changes nothing until you turn something on.');
             }),
             name: 'Should handle renames',
             render: (setting) => {

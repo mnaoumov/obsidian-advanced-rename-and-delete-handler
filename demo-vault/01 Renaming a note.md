@@ -4,6 +4,19 @@ Renaming a note should not break anything that pointed at it, and should not lea
 
 Two notes are involved: [Target note](<./Notes/Target note.md>), which gets renamed, and [Points at the target](<./Notes/Points at the target.md>), which links to it twice.
 
+## Turn it on first
+
+Installing this plugin changes nothing on its own: renames stay with Obsidian until you switch the plugin's handling on. That is deliberate. Other plugins ask you to install this one, and being asked to install something should never change how your vault behaves. Switch on the two behaviors this page shows:
+
+```code-button
+---
+caption: Turn on rename handling (off by default)
+---
+await require('/demoSetup.ts').changeSettings(app, { shouldHandleRenames: true, shouldRenameAttachmentFolder: true });
+```
+
+Manual equivalent: turn on **Should handle renames** and **Should rename attachment folder** in this plugin's settings.
+
 ## Links follow the note
 
 Open [Points at the target](<./Notes/Points at the target.md>) in a second pane, then press this:
@@ -29,7 +42,7 @@ console.log(require('/demoSetup.ts').printVaultTree(app));
 Manual equivalent: rename `Notes/Target note.md` in the File Explorer, and rename it back afterwards.
 
 - `shouldHandleRenames`
-  - whether the plugin handles renames at all. This is the setting the whole plugin hangs off; with it off, Obsidian does its own link updating and nothing else on this page has any effect.
+  - whether this plugin updates the links at all. With it off, Obsidian does its own link updating, and the link-text rewriting below has no effect. Off by default.
 - `shouldUpdateFileNameAliases`
   - whether a link whose display text was just the old file name gets that text rewritten too. A link somebody gave their own words to is left alone either way — that is the difference you just saw between the two links.
 
@@ -72,7 +85,7 @@ console.log(require('/demoSetup.ts').printVaultTree(app));
 Manual equivalent: drag `Notes/Target note.md` onto the `Archive` folder, and drag it back.
 
 - `shouldRenameAttachmentFolder`
-  - whether a note's own attachment folder moves and is renamed along with it. This applies when a note has a folder of its own — the arrangement plugins like Custom Attachment Location set up, where each note keeps its files in a folder named after it.
+  - whether a note's own attachment folder moves and is renamed along with it. This applies when a note has a folder of its own — the arrangement plugins like Custom Attachment Location set up, where each note keeps its files in a folder named after it. It works whether or not this plugin updates the links, which is why it is a switch of its own. Off by default.
 - `shouldRenameAttachmentFiles`
   - whether the attachment **files** are renamed too, so their names keep matching the note. Off by default: renaming a file the user named themselves is a bigger surprise than leaving it alone.
 

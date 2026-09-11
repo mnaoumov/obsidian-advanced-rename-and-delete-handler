@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## Direction: the defaults do nothing, and a first run says so
+
+Every behavior is off by default — `shouldHandleRenames` AND `shouldRenameAttachmentFolder` included, because the attachment move runs with link updates off. Custom Attachment Location and Consistent Attachments and Links declare this plugin as a mandatory dependency (`getPluginDependencies()` in `obsidian-dev-utils`), so users are made to install it, and being made to install something must not change how their vault behaves. Their old values arrive through `migrateSettings`, where the user sees what would change. Do not turn a default back on to make a demo or a test simpler; set it explicitly there.
+
+The price is one user the defaults would silently switch off: someone upgrading from 1.x who never changed a setting, so nothing of theirs is on disk to keep. A missing `data.json` cannot tell them apart from a fresh install, so `src/first-load-notice-component.ts` tells both, once, and then leaves a `data.json` behind. It writes `{}` through `ensureDataFileExists` rather than calling `saveToFile`, because the library's `saveToFile` skips a save when nothing changed since the read — which on a first run is always. `src/first-load-notice.cross-platform.integration.test.ts` is what caught that; a unit test with the settings component mocked cannot.
+
+The settings tab lists the plugins that depend on this one, from the `dependencyPluginIds` of their `obsidian-dev-utils:plugin-loaded` broadcasts (`src/plugin-dependents-component.ts`). It subscribes in `onloadImpl`, before `getPluginApis()` publishes the API that a dependent's gate waits for, so no dependent can announce itself unheard. The API is published through `getPluginApis()`, not by hand, for that reason and so the broadcast carries the contract version.
+
 ## Direction: stay Advanced-Exclude-agnostic; the fix is the disk-existence guard
 
 This plugin must NOT couple to Advanced Exclude — no `app.advancedExclude`, no "bulk in progress" signal handshake. (In `obsidian-consistent-attachments-and-links`, which owned this handler before, a prototype gating the settings builder's `isPathIgnored` on `app.advancedExclude.isApplyingProjection` was committed then reverted precisely to keep the plugin agnostic.)
