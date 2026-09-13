@@ -14,7 +14,7 @@ import {
  * the rename suites in the sibling plugins use.
  *
  * Cross-platform: the manifest declares `isDesktopOnly: false`, and renaming a note has to hold on a
- * phone as much as on a desktop, so the file name puts it in both projects (G47).
+ * phone as much as on a desktop, so the file name puts it in both projects.
  */
 
 interface RenameLinkUpdateResult {
