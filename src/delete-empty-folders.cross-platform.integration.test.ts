@@ -65,7 +65,7 @@ describe('The manual Delete empty folders sweep', () => {
          * could never reach: the transport would kill the whole eval first, and report it as a bare script
          * timeout naming the harness rather than this wait.
          *
-         * This wait deliberately stays INSIDE the closure, unlike the rest of the fleet's long waits, which
+         * This wait deliberately stays INSIDE the closure, where the other long waits in these suites
          * moved to `pollInObsidian`. The reason is the one the file header already gives: this sweep acts on
          * the WHOLE shared vault, and a sibling suite's fixture is exposed only between its `createFolder`
          * and the first file it puts there. Inside one closure that window is microseconds. Split across
