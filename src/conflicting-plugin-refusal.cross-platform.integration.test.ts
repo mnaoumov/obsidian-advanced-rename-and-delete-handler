@@ -44,6 +44,16 @@ describe('A plugin that still owns its own rename/delete handler', () => {
         conflictingPluginVersion,
         pluginId
       }): Promise<ConflictRefusalResult> {
+        /*
+         * Under the transport's ~30s per-closure cap, not at it.
+         * Read and deliberately left as it is. The 25_400ms this closure declares is the sum of two
+         * deadline loops below plus one poll interval each, and both deadlines are worst cases for steps
+         * that normally land in a couple of hundred milliseconds: the refusal notice appearing, and this
+         * plugin unloading itself afterwards.
+         * The number that matters is that the worst case still fits inside the cap, so a run where both
+         * deadlines expire fails on the assertions below, naming what did not happen, instead of dying as
+         * a bare transport timeout naming only the harness.
+         */
         const pluginFolder = `${app.vault.configDir}/plugins/${conflictingPluginId}`;
         const adapter = app.vault.adapter;
 
