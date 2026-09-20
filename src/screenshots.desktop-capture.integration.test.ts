@@ -16,22 +16,13 @@
  *
  * The refusal shot is LAST because it unloads the plugin — nothing can be captured of it afterwards.
  *
- * **The settings modal has to be forced out of its popout window, and without that nothing renders.**
- * `app.setting` is popout-capable: `shouldUsePopout()` returns `app.vault.getConfig('settingsPopoutWindow')`,
- * whose Obsidian default is `true`, and the popout branch runs whenever `Platform.canPopoutWindow` — so on
- * every desktop run and no mobile one. It opens a second Electron window, reassigns the `activeWindow` /
- * `activeDocument` globals to it, and `Modal.open()` appends the modal into THAT window's document.
- * Measured against a real Obsidian: after `open()` this document held exactly three `.setting-item-name`
- * rows, all of them the search sidebar's — so a `waitUntil` here could only ever time out, and
- * `captureObsidianScreenshot`, which photographs the main window, could only ever produce a frame with no
- * settings in it and no error to say so. Setting `settingsPopoutWindow` to `false` BEFORE `open()` is the
- * whole fix: `open()` then attaches `containerEl` to this document itself, so nothing needs pre-appending.
- *
- * An assert-only suite can dodge all of this by rendering the tab directly or querying
- * `settingTab.containerEl`, wherever it ended up — a screenshot cannot, because the pixels have to be in
- * the window being photographed. The `setConfig` call below and the cast it needs go away once the harness
- * writes the key into the temporary vault's `app.json` itself, beside the `alwaysUpdateLinks` it already
- * writes.
+ * **Shot 1 renders at all because the settings modal stays in the photographed window.** `app.setting` is
+ * popout-capable, and left at Obsidian's default it opens the settings in a second Electron window that
+ * `captureObsidianScreenshot` never photographs — a frame with no settings in it and no error to say so.
+ * Nothing here has to arrange that any more: the harness writes `settingsPopoutWindow: false` into every
+ * vault it owns, and this suite reaches its vault through `getTemporaryVault()`. See
+ * `obsidian-integration-testing`'s `AGENTS.md`, **L48. Headless vault defaults**, for the mechanism and for
+ * why the key is a default rather than a knob.
  *
  * There is deliberately no "before and after" pair. The interesting half of this plugin is what does NOT
  * happen — a link that never broke, an attachment that never stranded — and a frame of a vault that
@@ -105,15 +96,6 @@ interface RenameProbe {
 interface SettingsProbe {
   readonly noticeText: string;
   readonly settingNames: string[];
-}
-
-/**
- * Obsidian's vault config, reduced to the one key `obsidian-typings` does not declare. Its `ConfigItem`
- * union lists fifty keys and `settingsPopoutWindow` is not among them, so the call needs a cast until it
- * is.
- */
-interface VaultWithPopoutConfig {
-  setConfig(key: 'settingsPopoutWindow', shouldUsePopout: boolean): void;
 }
 
 const WIDTH_IN_PIXELS = 1200;
@@ -378,15 +360,6 @@ async function openSettingsTab(): Promise<SettingsProbe> {
       const RENDER_TIMEOUT_IN_MILLISECONDS = 20_000;
       const OPEN_DELAY_IN_MILLISECONDS = 500;
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
-
-      /*
-       * The one step that makes this work, and it must come BEFORE `open()` — `shouldUsePopout()` is read
-       * inside the call. Left at Obsidian's default the settings go into a second Electron window, taking
-       * `activeWindow` / `activeDocument` with them, and this document never sees a row. The file header
-       * records the mechanism and what was measured.
-       */
-      const vault: unknown = app.vault;
-      (vault as VaultWithPopoutConfig).setConfig('settingsPopoutWindow', false);
 
       app.setting.open();
       await sleep(OPEN_DELAY_IN_MILLISECONDS);
