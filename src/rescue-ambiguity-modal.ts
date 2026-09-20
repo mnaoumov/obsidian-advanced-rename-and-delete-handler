@@ -29,8 +29,9 @@ import {
   showModal
 } from 'obsidian-dev-utils/obsidian/modals/modal';
 import { NoPriorityWinnerReason } from 'obsidian-dev-utils/obsidian/note-priority';
-import { basename } from 'obsidian-dev-utils/path';
 import { assertNever } from 'obsidian-dev-utils/type-guards';
+
+import { getDisambiguatedNoteLabels } from './note-path-labels.ts';
 
 /**
  * How the user settled an attachment the priority list could not place.
@@ -139,9 +140,14 @@ class RescueAmbiguityModal extends ModalBase<RescueAmbiguityDecision> {
       cls: 'advanced-rename-and-delete-handler rescue-ambiguity-buttons'
     });
 
-    for (const notePath of this.survivingNotePaths) {
+    /*
+     * The label says only as much of the path as it takes to tell these notes apart (issue #1): two
+     * surviving notes sharing a basename used to render two identical buttons. The tooltip keeps the
+     * whole path either way, which is where the reporter found it.
+     */
+    for (const { label, notePath } of getDisambiguatedNoteLabels(this.survivingNotePaths)) {
       const button = new ButtonComponent(buttonsEl);
-      button.setButtonText(`Move to ${basename(notePath)}`);
+      button.setButtonText(`Move to ${label}`);
       button.setTooltip(`Move the attachment into the attachment folder of ${notePath}`);
       button.onClick(() => {
         this.select(notePath);

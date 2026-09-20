@@ -144,15 +144,25 @@ describe('showRescueAmbiguityModal', () => {
     expect(await decisionPromise).toEqual({ adoptingNotePath: null, shouldUseSameActionForRest: false });
   });
 
-  it('should still resolve the right path when two surviving notes share a name', async () => {
+  it('should tell two surviving notes that share a name apart on the buttons themselves', async () => {
     const decisionPromise = show(['Archive/note.md', 'Notes/note.md']);
 
-    // Both buttons read the same, so what a press means cannot be read off the label alone.
-    expect(buttonTexts()).toEqual(['Move to note.md', 'Move to note.md', 'Leave it here']);
+    // The label says which one, rather than leaving it to a hover (issue #1).
+    expect(buttonTexts()).toEqual(['Move to Archive/note.md', 'Move to Notes/note.md', 'Leave it here']);
 
-    pressButton('Move to note.md');
+    pressButton('Move to Notes/note.md');
 
-    expect(await decisionPromise).toEqual({ adoptingNotePath: 'Archive/note.md', shouldUseSameActionForRest: false });
+    expect(await decisionPromise).toEqual({ adoptingNotePath: 'Notes/note.md', shouldUseSameActionForRest: false });
+  });
+
+  it('should leave a note whose name is already unique on its bare name, however deep it sits', async () => {
+    const decisionPromise = show(['Archive/2024/Q3/deep.md', 'Notes/shallow.md']);
+
+    expect(buttonTexts()).toEqual(['Move to deep.md', 'Move to shallow.md', 'Leave it here']);
+
+    pressButton('Move to deep.md');
+
+    expect(await decisionPromise).toEqual({ adoptingNotePath: 'Archive/2024/Q3/deep.md', shouldUseSameActionForRest: false });
   });
 });
 

@@ -81,6 +81,8 @@ The deadlock that shaped `src/rescue-decision-scope.ts` is worth not re-deriving
 
 It lives in its own module rather than in `src/rename-delete-handler-component.ts` only because that file sits inside a `/* v8 ignore */` region and coverage is enforced at 100%.
 
+**The dialog's button labels are disambiguated per note, not per dialog** (`src/note-path-labels.ts`, issue #1). A surviving note whose basename is unique among the ones offered keeps the bare basename; one whose basename collides grows the shortest trailing run of path segments that tells it apart from the notes it collided with, opening with an ellipsis when segments were dropped. Showing the full path on every button was considered and refused: it widens every button in every deep vault to fix a case most dialogs never reach, and the whole path is on the tooltip regardless — which is where the reporter found it before filing. The two cross-platform closures pin `Move to A.md` / `Move to B.md` on notes with distinct basenames, so they exercise the unique case and say nothing about the colliding one; that one is pinned in `src/rescue-ambiguity-modal.test.ts` and `src/note-path-labels.test.ts`.
+
 A blocking modal inside a queued delete is safe: `addToQueue` passes `pluginNoticeComponent: null` to `runWithTimeoutNotice`, so the 60s timeout resolves to `onTimeoutWithoutNotice` — a debug log, no notice, and **no abort**.
 
 ### An attachment unit folder is moved BEFORE the walk, never by the per-file rescue hook
