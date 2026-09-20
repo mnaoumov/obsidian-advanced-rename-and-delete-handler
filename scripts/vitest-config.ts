@@ -41,6 +41,35 @@ const ANDROID_CAPTURE_TEST_FILES = 'src/**/*.android-capture.integration.test.ts
  */
 const SCREENSHOT_AVD_NAME = 'obsidian_screenshots';
 
+/**
+ * The Obsidian the desktop shots are photographed on, pinned deliberately.
+ *
+ * Nothing in these three frames depends on the Obsidian version for its CONTENT — they are this plugin's
+ * settings tab, its rename notice, and its refusal notice against a stub installed by the suite itself —
+ * but the CHROME around them does, and an unpinned capture photographs whatever the harness happens to
+ * provision. Measured 2026-09-03: two back-to-back capture runs produced byte-identical PNGs
+ * for all three shots, so the suite is deterministic, while both of the committed shots 2 and 3 differed
+ * from those runs — the breadcrumb had moved from centred to left-aligned and the ribbon spacing had
+ * tightened, because the harness had moved on to the Catalyst `obsidian-1.14.0.asar` since they were taken.
+ * That is the whole of the "every run rewrites two shots" symptom this pin closes: not per-run noise, but a
+ * committed set photographed on an Obsidian the harness no longer boots.
+ *
+ * `public-latest` rather than a fixed number, because a store screenshot should show the Obsidian a store
+ * reader is running: following the public line keeps the chrome current and keeps a Catalyst build ahead of
+ * public release out of the listing. It moves when Obsidian ships, which is a drift worth having — unlike
+ * the harness's provisioning, it moves with the audience.
+ *
+ * This deliberately overrides the `OBSIDIAN_VERSION` escape hatch `obsidian-dev-utils` honours on
+ * `integration-tests:desktop`, for the capture project only. A capture is not a test run, and a listing
+ * photographed against an arbitrary version is the defect above.
+ *
+ * **There is deliberately NO installer pin here, unlike the sibling suite in
+ * `obsidian-app-update-notifier`.** That one freezes `obsidianInstallerVersion` because its frame has to
+ * show the installer BEHIND the app — the shot is of an update notice. No frame here reads the
+ * installer version at all, so pinning it would be a constant nothing depends on.
+ */
+const CAPTURE_OBSIDIAN_VERSION = 'public-latest';
+
 const APPIUM_URL = 'http://localhost:4723';
 
 /**
@@ -98,6 +127,20 @@ export const config = defineObsidianPluginVitestConfig({
       {
         test: {
           ...context.desktop,
+          /*
+           * Merged rather than assigned. `editContext` runs BEFORE this and has already put the CDP
+           * transport and its `commandTimeoutInMilliseconds` on `context.desktop`; assigning a fresh
+           * object here would silently drop that budget back to the transport's 30s default, for the one
+           * project whose closures do the most waiting.
+           */
+          environmentOptions: {
+            ...context.desktop.environmentOptions,
+            obsidianTransport: {
+              ...context.desktop.environmentOptions?.['obsidianTransport'] as Record<string, unknown> | undefined,
+              obsidianVersion: CAPTURE_OBSIDIAN_VERSION,
+              type: 'obsidian-cdp'
+            }
+          },
           include: [DESKTOP_CAPTURE_TEST_FILES],
           name: 'capture-screenshots:desktop'
         }

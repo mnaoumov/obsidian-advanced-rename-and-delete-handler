@@ -16,6 +16,21 @@
  *
  * There is no mobile equivalent of the desktop viewport override, so the capture is always the device's
  * own framebuffer, and the AVD is built at exactly 900x1600.
+ *
+ * **There is no version pin here, unlike the desktop half.** `scripts/vitest-config.ts` pins
+ * `capture-screenshots:desktop` to `public-latest`, because an unpinned run photographed whatever asar the
+ * harness happened to provision and silently re-chromed the committed frames. Nothing
+ * equivalent is available on this side: `ObsidianAndroidAppiumTransportOptions` exposes twenty options and
+ * not one of them names a version — the app is simply whatever APK the AVD carries, changed by
+ * rebuilding the AVD rather than by configuration.
+ *
+ * So the desktop conclusion — that the capture is byte-stable once the Obsidian is pinned and the caret is
+ * out of the frame — is NOT claimed for these two shots. It has not been measured on this host: the
+ * `obsidian_screenshots` AVD wedges during Appium session creation and no Android capture run has reached a
+ * shot since. If a run here ever rewrites a PNG, look at the frame before assuming it is noise;
+ * the AVD's Obsidian moving is the first thing to rule out, and the caret the second — the desktop half
+ * drops focus in its own `shoot` for exactly that reason, and nothing equivalent is done here because there
+ * has been no run to measure it against.
  */
 
 import {
