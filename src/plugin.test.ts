@@ -39,13 +39,13 @@ interface FileManagerWithLinkUpdate {
 
 // `getPluginApis` is protected on the base for the same reason.
 interface PluginApisProbe {
-  getPluginApis(): PluginApiDeclaration[];
+  getPluginApis: () => PluginApiDeclaration[];
 }
 
 // `getPluginConflicts` is protected on the base — the declaration is for the library, not for callers —
 // So a test reads it through a probe rather than widening the plugin's own surface.
 interface PluginConflictsProbe {
-  getPluginConflicts(): PluginConflict[];
+  getPluginConflicts: () => PluginConflict[];
 }
 
 interface PluginGateProbe {
@@ -57,11 +57,11 @@ interface PluginsLike {
 }
 
 interface RenameDeleteHandlerComponentParams {
-  settingsBuilder(): Partial<RenameDeleteHandlerSettings>;
+  readonly settingsBuilder: () => Partial<RenameDeleteHandlerSettings>;
 }
 
 interface SettingsTabParamsProbe {
-  getPluginGateComponent(): PluginGateComponent;
+  getPluginGateComponent: () => PluginGateComponent;
 }
 
 const {

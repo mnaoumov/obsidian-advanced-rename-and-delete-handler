@@ -27,7 +27,19 @@ import {
 
 const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const NOTICE_TEXT = 'doing nothing yet';
-const WAIT_TIMEOUT_IN_MILLISECONDS = 20_000;
+
+/*
+ * Under the transport's ~30s per-closure cap, not at it. The whole closure is one transport call, so what
+ * matters is the SUM of what it declares, not what any single wait asks for — and this budget is charged
+ * FOUR times across `reloadPlugin`, `dismissNotice` and the closure's own body, for 28 000 ms in total. At
+ * 20_000 the sum was 80 000, well past a cap the call would have been killed at first and reported as a bare
+ * transport timeout naming the harness rather than the wait that overran.
+ *
+ * The longest of the four is a plugin disable/enable round trip, which is a load of this one plugin rather
+ * than of the vault, so seven seconds is generous for it. There is no long step here to move to
+ * `pollInObsidian`.
+ */
+const WAIT_TIMEOUT_IN_MILLISECONDS = 7000;
 
 interface FirstLoadProbeResult {
   readonly doesDataFileExistAfter: boolean;

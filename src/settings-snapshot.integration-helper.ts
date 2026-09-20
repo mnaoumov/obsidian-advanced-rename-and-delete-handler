@@ -67,8 +67,8 @@ interface MigrateSettingsResultLike {
 }
 
 interface PluginApiLike {
-  getSettings(): PluginSettingsSnapshot;
-  migrateSettings(params: MigrateSettingsParamsLike): Promise<MigrateSettingsResultLike>;
+  getSettings: () => PluginSettingsSnapshot;
+  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 interface PluginWithApiLike {

@@ -1,4 +1,10 @@
-import { evalInObsidian } from 'obsidian-integration-testing';
+import type { EventRef } from 'obsidian';
+
+import {
+  ContextId,
+  evalInObsidian,
+  pollInObsidian
+} from 'obsidian-integration-testing';
 import {
   afterAll,
   beforeAll,
@@ -47,12 +53,61 @@ import {
  *
  * Desktop-only, as its sibling is: the behavior is platform-independent, and the owner's call was to keep
  * the heavy timing-sensitive suites off the Android emulator pass.
+ *
+ * ## The waiting happens in NODE, and no ceiling could have replaced that
+ *
+ * The whole argument is in the sibling suite's header and is not repeated: this scenario had the same shape
+ * and the same 240 000 ms declared inside one transport call, and the same reason no smaller ceiling would
+ * do. What this suite adds is a second piece of state that cannot cross the boundary — the emulated plugin's
+ * `EventRef` and the flag its listener sets — so here the `contextId` carries three things rather than one:
+ * the listener's registration (so the Node-side `finally` can take it off again), the flag, and the fired
+ * rename's rejection. The listener is registered in `start`, immediately before the rename it has to fire
+ * inside, because that ordering is the whole scenario.
+ *
+ * `flushQueue()` still runs, in the `finally` rather than on the line after the rename — see the sibling
+ * header for why dropping it was measurably wrong, and for where this repo's own rule says it belongs.
  */
 
 const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const SOURCE_PLUGIN_ID = 'obsidian-custom-attachment-location';
 const ATTACHMENT_COUNT = 30;
 const SCENARIO_TIMEOUT_IN_MILLISECONDS = 180_000;
+const INSERTED_LINE = 'A line inserted mid-rename to shift the offsets after it.';
+
+const SRC_FOLDER = 'rdh-note-move-edit-src';
+// Deliberately longer than the source, so every rewritten link grows and the links after it shift.
+const DST_FOLDER = 'rdh-note-move-edit-destination-with-a-much-longer-name';
+const SRC_NOTE = `${SRC_FOLDER}/note.md`;
+const DST_NOTE = `${DST_FOLDER}/note.md`;
+const SRC_ATTACHMENT_FOLDER = `${SRC_FOLDER}/assets`;
+const DST_ATTACHMENT_FOLDER = `${DST_FOLDER}/assets`;
+
+/*
+ * Under the transport's ~30s per-closure cap, not at it. This is the one closure here that still waits
+ * in-page, because what it waits on cannot cross the boundary: a live `migrateSettings` promise and the
+ * `isSettled` flag its handlers set. It is a settings write and a modal, which settle in well under a second,
+ * so it is the whole of this file's in-closure budget.
+ */
+const SETTINGS_WAIT_TIMEOUT_IN_MILLISECONDS = 8000;
+
+/**
+ * The Node-side budget for the created embeds to reach the metadata cache.
+ */
+const INDEX_TIMEOUT_IN_MILLISECONDS = 30_000;
+
+/**
+ * The Node-side budget for the handler to carry every attachment into the destination folder.
+ *
+ * The long one, because this is the step the issue is about: thirty attachments moved one at a time through
+ * the plugin's own operation queue, with an outside edit landing in the middle of it. Safe to be long because
+ * Node does the waiting.
+ */
+const MOVE_TIMEOUT_IN_MILLISECONDS = 90_000;
+
+/**
+ * The Node-side budget for the rewritten links to settle.
+ */
+const REWRITE_TIMEOUT_IN_MILLISECONDS = 45_000;
 
 interface ConcurrentEditResult {
   readonly isEditApplied: boolean;
@@ -77,17 +132,56 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
-  migrateSettings(params: MigrateSettingsParamsLike): Promise<MigrateSettingsResultLike>;
+  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
+}
+
+/**
+ * What the move poll reports back to Node.
+ */
+interface MoveProbe {
+  readonly isEditApplied: boolean;
+  readonly movedAttachmentCount: number;
+
+  /**
+   * The message of the rejection the fired rename produced, or `null` while it has not rejected.
+   *
+   * The rename is deliberately not awaited, so this is the only route a genuine failure has back to Node —
+   * without it a rejected rename reads as an attachment count that never rises.
+   */
+  readonly renameError: null | string;
+}
+
+/**
+ * The state `start` leaves behind, shared through the call's {@link ContextId}.
+ *
+ * None of the three can be serialized across the transport, which is what this parameter exists for: an
+ * `EventRef` is an opaque Obsidian handle, and the other two are written by callbacks that outlive the call
+ * that registered them.
+ */
+interface NoteMoveContext {
+  eventRef?: EventRef;
+  isEditApplied?: boolean;
+  renameError?: string;
 }
 
 interface PluginWithApiLike {
   readonly api: MigrationApiLike;
 }
 
+/**
+ * The three vault configs this scenario overwrites, carried back to Node so the restore is a Node-side
+ * `finally` that runs however the scenario ends.
+ */
+interface VaultConfigSnapshot {
+  readonly alwaysUpdateLinks: unknown;
+  readonly attachmentFolderPath: unknown;
+  readonly newLinkFormat: unknown;
+}
+
 /*
  * This plugin's settings outlive each test file — one run drives every suite against one Obsidian instance —
  * so what this suite stages must not become the starting point of whichever file the sequencer runs next.
- * Handed back the way the `finally` blocks below hand back `attachmentFolderPath`. See
+ * Handed back the way the Node-side `finally` below hands back the vault configs. See
  * `settings-snapshot.integration-helper.ts`.
  */
 let originalSettings: PluginSettingsSnapshot;
@@ -102,53 +196,94 @@ afterAll(async () => {
 
 describe('A note edited by another plugin while it is being moved', () => {
   it('still has every one of its embeds resolving', async () => {
-    const result = await evalInObsidian({
-      async callback({
-        app,
-        attachmentCount,
-        lib: {
-          flushQueue,
-          waitUntil
-        },
-        pluginId,
-        sourcePluginId
-      }): Promise<ConcurrentEditResult> {
-        const SRC_FOLDER = 'rdh-note-move-edit-src';
-        // Deliberately longer than the source, so every rewritten link grows and the links after it shift.
-        const DST_FOLDER = 'rdh-note-move-edit-destination-with-a-much-longer-name';
-        const SRC_NOTE = `${SRC_FOLDER}/note.md`;
-        const DST_NOTE = `${DST_FOLDER}/note.md`;
-        const SRC_ATTACHMENT_FOLDER = `${SRC_FOLDER}/assets`;
-        const DST_ATTACHMENT_FOLDER = `${DST_FOLDER}/assets`;
-        const WAIT_TIMEOUT_IN_MILLISECONDS = 60_000;
-        const INSERTED_LINE = 'A line inserted mid-rename to shift the offsets after it.';
+    const contextId = new ContextId<NoteMoveContext>();
+    const originalConfigs = await stageVaultConfigs();
 
-        const plugin = app.plugins.plugins[pluginId];
-        if (!plugin) {
-          throw new Error(`${pluginId} is not loaded`);
-        }
+    try {
+      await applySettings();
+      await createFixture();
+      await waitForEmbedsToIndex();
+      const moveProbe = await moveNote();
+      await waitForLinksToSettle();
 
-        function hasApi(candidate: object): candidate is PluginWithApiLike {
-          return 'api' in candidate;
-        }
+      const result = await readResult(moveProbe.isEditApplied);
 
-        if (!hasApi(plugin)) {
-          throw new Error(`${pluginId} exposes no API`);
-        }
+      /*
+       * The emulated second plugin really did edit the note inside the rename window. Without this the suite
+       * would silently degrade into a duplicate of the plain scale suite and prove nothing.
+       */
+      expect(result.isEditApplied).toBe(true);
+      expect(result.noteContentAfter).toContain('A line inserted mid-rename');
 
-        const api = plugin.api;
+      // The scenario staged what it claims to: the note kept all its embeds and every attachment moved.
+      expect(result.totalLinkCount).toBe(ATTACHMENT_COUNT);
+      expect(result.movedAttachmentCount).toBe(ATTACHMENT_COUNT);
 
-        /**
-         * Writes settings through the plugin's own migration API and approves the dialog it raises.
-         *
-         * A proposal that matches what the plugin already holds resolves with no dialog at all, so the wait
-         * settles on either outcome rather than insisting on a modal that may never appear.
-         *
-         * @param proposedSettings - The settings to write.
-         */
-        async function applySettings(proposedSettings: MigratableSettingsLike): Promise<void> {
-          const migrationPromise = api.migrateSettings({
-            proposedSettings,
+      // Every embed must still resolve, named individually so a regression shows which of them went stale.
+      expect(result.staleLinks).toStrictEqual([]);
+    } finally {
+      await drainQueue();
+      await restore(originalConfigs);
+      await contextId.dispose();
+    }
+
+    /**
+     * Drains whatever is left on the handler's own operation queue.
+     *
+     * This is the `flushQueue()` the pre-conversion shape awaited on the line after the rename, where it
+     * covered the whole move; here it runs once the polls above have already proven the move's effects
+     * arrived, so what is left is tail work and the call is short. It is not optional bookkeeping — see the
+     * sibling suite's header for what dropping it cost — and it runs from the `finally` so a failed assertion
+     * cannot hand a live queue to the next suite.
+     *
+     * A rejection is swallowed: this runs on the failure path too, and a stuck queue must not replace the
+     * assertion that actually failed.
+     */
+    async function drainQueue(): Promise<void> {
+      try {
+        await evalInObsidian({
+          async callback({ lib: { flushQueue } }): Promise<void> {
+            await flushQueue();
+          }
+        });
+      } catch {
+        // Reported by whatever the scenario itself found, which is the more useful failure.
+      }
+    }
+
+    /**
+     * Writes the plugin's own defaults through its migration API and approves the dialog that raises.
+     *
+     * A proposal that matches what the plugin already holds resolves with no dialog at all, so the wait
+     * settles on either outcome rather than insisting on a modal that may never appear.
+     */
+    async function applySettings(): Promise<void> {
+      await evalInObsidian({
+        async callback({
+          app,
+          lib: { waitUntil },
+          pluginId,
+          sourcePluginId,
+          waitTimeoutInMilliseconds
+        }): Promise<void> {
+          const plugin = app.plugins.plugins[pluginId];
+          if (!plugin) {
+            throw new Error(`${pluginId} is not loaded`);
+          }
+
+          function hasApi(candidate: object): candidate is PluginWithApiLike {
+            return 'api' in candidate;
+          }
+
+          if (!hasApi(plugin)) {
+            throw new Error(`${pluginId} exposes no API`);
+          }
+
+          const migrationPromise = plugin.api.migrateSettings({
+            proposedSettings: {
+              shouldHandleRenames: true,
+              shouldRenameAttachmentFolder: true
+            },
             sourcePluginId
           });
           let isSettled = false;
@@ -167,7 +302,7 @@ describe('A note edited by another plugin while it is being moved', () => {
           await waitUntil({
             message: 'the settings dialog opens, or the proposal turns out to change nothing',
             predicate: () => isSettled || document.querySelector('.modal-container') !== null,
-            timeoutInMilliseconds: WAIT_TIMEOUT_IN_MILLISECONDS
+            timeoutInMilliseconds: waitTimeoutInMilliseconds
           });
 
           const modalEl = document.querySelector('.modal-container');
@@ -185,54 +320,87 @@ describe('A note edited by another plugin while it is being moved', () => {
           if (!migrateSettingsResult.isApplied) {
             throw new Error('the settings were not applied');
           }
+        },
+        input: {
+          pluginId: PLUGIN_ID,
+          sourcePluginId: SOURCE_PLUGIN_ID,
+          waitTimeoutInMilliseconds: SETTINGS_WAIT_TIMEOUT_IN_MILLISECONDS
         }
+      });
+    }
 
-        /**
-         * Counts the attachments that have arrived in the destination note's attachment folder.
-         *
-         * @returns The count.
-         */
-        function countMovedAttachments(): number {
-          return app.vault.getFiles().filter((file) => file.path.startsWith(`${DST_ATTACHMENT_FOLDER}/`)).length;
-        }
-
-        const originalAttachmentFolderPath = app.vault.getConfig('attachmentFolderPath');
-        const originalAlwaysUpdateLinks = app.vault.getConfig('alwaysUpdateLinks');
-        const originalNewLinkFormat = app.vault.getConfig('newLinkFormat');
-
-        let isEditApplied = false;
-        let renameEventRef: null | ReturnType<typeof app.vault.on> = null;
-
-        // Everything that mutates shared state sits inside the `try`, so the `finally` below puts the vault back however this ends.
-        try {
-          app.vault.setConfig('attachmentFolderPath', './assets');
-          // Obsidian otherwise asks for confirmation through a modal, which would stall a headless run.
-          app.vault.setConfig('alwaysUpdateLinks', true);
-          // See the file header: the default shortest-path format would leave every rewritten link textually identical.
-          app.vault.setConfig('newLinkFormat', 'absolute');
-
-          await applySettings({
-            shouldHandleRenames: true,
-            shouldRenameAttachmentFolder: true
-          });
-
-          await app.vault.createFolder(SRC_ATTACHMENT_FOLDER);
-          await app.vault.createFolder(DST_FOLDER);
+    /**
+     * Builds the source tree: the attachment folder, the destination folder, the attachments, and the note
+     * embedding every one of them.
+     */
+    async function createFixture(): Promise<void> {
+      await evalInObsidian({
+        async callback({
+          app,
+          count,
+          destinationFolder,
+          srcAttachmentFolder,
+          srcNote
+        }): Promise<void> {
+          await app.vault.createFolder(srcAttachmentFolder);
+          await app.vault.createFolder(destinationFolder);
 
           const noteLines: string[] = [];
-          for (let index = 0; index < attachmentCount; index++) {
-            const attachmentPath = `${SRC_ATTACHMENT_FOLDER}/img-${index.toString().padStart(3, '0')}.png`;
+          for (let index = 0; index < count; index++) {
+            const attachmentPath = `${srcAttachmentFolder}/img-${index.toString().padStart(3, '0')}.png`;
             await app.vault.createBinary(attachmentPath, new ArrayBuffer(8));
             noteLines.push(`Image ${index.toString()}: ![[${attachmentPath}]]`);
           }
 
-          const note = await app.vault.create(SRC_NOTE, `${noteLines.join('\n\n')}\n`);
+          await app.vault.create(srcNote, `${noteLines.join('\n\n')}\n`);
+        },
+        input: {
+          count: ATTACHMENT_COUNT,
+          destinationFolder: DST_FOLDER,
+          srcAttachmentFolder: SRC_ATTACHMENT_FOLDER,
+          srcNote: SRC_NOTE
+        }
+      });
+    }
 
-          await waitUntil({
-            message: 'every embed in the note is indexed by the metadata cache',
-            predicate: () => (app.metadataCache.getFileCache(note)?.embeds?.length ?? 0) >= attachmentCount,
-            timeoutInMilliseconds: WAIT_TIMEOUT_IN_MILLISECONDS
-          });
+    /**
+     * Registers the emulated second plugin, fires the rename, and waits from Node for every attachment to
+     * arrive in the destination folder.
+     *
+     * `start` does NOT await the rename: awaiting it would put the whole move — the very thing that can run
+     * for minutes — back inside one transport call. The attachment count arriving is the proof the queue ran,
+     * in place of the `flushQueue()` the old shape awaited here.
+     *
+     * @returns The last probe, which carries whether the emulated plugin's edit landed.
+     */
+    async function moveNote(): Promise<MoveProbe> {
+      const probe = await pollInObsidian({
+        contextId,
+        input: {
+          destinationAttachmentFolder: DST_ATTACHMENT_FOLDER,
+          destinationNote: DST_NOTE,
+          insertedLine: INSERTED_LINE,
+          srcNote: SRC_NOTE
+        },
+        poll({ app, context, destinationAttachmentFolder }): MoveProbe {
+          return {
+            isEditApplied: context.isEditApplied ?? false,
+            movedAttachmentCount: app.vault.getFiles().filter((file) => file.path.startsWith(`${destinationAttachmentFolder}/`)).length,
+            renameError: context.renameError ?? null
+          };
+        },
+        start({
+          app,
+          context,
+          destinationAttachmentFolder,
+          destinationNote,
+          insertedLine,
+          srcNote
+        }): void {
+          const note = app.vault.getFileByPath(srcNote);
+          if (!note) {
+            throw new Error(`Note ${srcNote} not found.`);
+          }
 
           /*
            * The emulated second plugin. It fires on the FIRST attachment rename — which happens after the
@@ -240,13 +408,13 @@ describe('A note edited by another plugin while it is being moved', () => {
            * down the note, shifting every link below it. A real co-installed link-rewriting plugin perturbs
            * the same window; this is the minimal deterministic stand-in for one.
            */
-          renameEventRef = app.vault.on('rename', (file) => {
-            if (isEditApplied || !file.path.startsWith(`${DST_ATTACHMENT_FOLDER}/`)) {
+          context.eventRef = app.vault.on('rename', (file) => {
+            if ((context.isEditApplied ?? false) || !file.path.startsWith(`${destinationAttachmentFolder}/`)) {
               return;
             }
 
-            isEditApplied = true;
-            const noteFile = app.vault.getFileByPath(DST_NOTE) ?? app.vault.getFileByPath(SRC_NOTE);
+            context.isEditApplied = true;
+            const noteFile = app.vault.getFileByPath(destinationNote) ?? app.vault.getFileByPath(srcNote);
             if (!noteFile) {
               return;
             }
@@ -254,7 +422,7 @@ describe('A note edited by another plugin while it is being moved', () => {
             app.vault.process(noteFile, (content) => {
               const blocks = content.split('\n\n');
               const insertAt = Math.floor(blocks.length / 2);
-              return [...blocks.slice(0, insertAt), INSERTED_LINE, ...blocks.slice(insertAt)].join('\n\n');
+              return [...blocks.slice(0, insertAt), insertedLine, ...blocks.slice(insertAt)].join('\n\n');
             }).catch(() => {
               /*
                * The vault `rename` callback is synchronous, so this edit is fire-and-forget. A failure is not
@@ -263,41 +431,45 @@ describe('A note edited by another plugin while it is being moved', () => {
             });
           });
 
-          await app.fileManager.renameFile(note, DST_NOTE);
-          // The handler moves the attachments and rewrites the links on its own queue, which this drains.
-          await flushQueue();
-
-          await waitUntil({
-            message: 'every attachment has moved into the destination folder',
-            predicate: () => countMovedAttachments() >= attachmentCount,
-            timeoutInMilliseconds: WAIT_TIMEOUT_IN_MILLISECONDS
+          app.fileManager.renameFile(note, destinationNote).catch((error: unknown) => {
+            context.renameError = error instanceof Error ? error.message : String(error);
           });
+        },
+        timeoutInMilliseconds: MOVE_TIMEOUT_IN_MILLISECONDS,
+        timeoutMessage: 'the attachments never finished moving into the destination folder',
+        until: (result: MoveProbe): boolean => result.renameError !== null || result.movedAttachmentCount >= ATTACHMENT_COUNT
+      });
 
-          const movedNote = app.vault.getFileByPath(DST_NOTE);
+      if (probe.renameError !== null) {
+        throw new Error(`the rename rejected: ${probe.renameError}`);
+      }
+
+      return probe;
+    }
+
+    /**
+     * Reads what the move left behind.
+     *
+     * @param wasEditApplied - What the move poll saw of the emulated plugin's edit.
+     * @returns The moved note's content, its embeds, and which of them resolve to nothing.
+     */
+    async function readResult(wasEditApplied: boolean): Promise<ConcurrentEditResult> {
+      return await evalInObsidian({
+        async callback({
+          app,
+          destinationAttachmentFolder,
+          destinationNote,
+          isEditApplied
+        }): Promise<ConcurrentEditResult> {
+          const movedNote = app.vault.getFileByPath(destinationNote);
           if (!movedNote) {
-            throw new Error(`Note ${DST_NOTE} not found.`);
-          }
-
-          /*
-           * The timeout is swallowed deliberately: a link left stale must be reported by the assertion below,
-           * which names WHICH links went stale — the broken build fails with exactly the contiguous tail
-           * after the insertion point, and that identity is the evidence for the mechanism — rather than as
-           * an opaque wait failure.
-           */
-          try {
-            await waitUntil({
-              message: 'every embed in the moved note resolves again',
-              predicate: async () => collectStaleLinks(await app.vault.read(movedNote)).length === 0,
-              timeoutInMilliseconds: WAIT_TIMEOUT_IN_MILLISECONDS
-            });
-          } catch {
-            // Reported by the stale-link assertion instead.
+            throw new Error(`Note ${destinationNote} not found.`);
           }
 
           const noteContentAfter = await app.vault.read(movedNote);
           return {
             isEditApplied,
-            movedAttachmentCount: countMovedAttachments(),
+            movedAttachmentCount: app.vault.getFiles().filter((file) => file.path.startsWith(`${destinationAttachmentFolder}/`)).length,
             noteContentAfter,
             staleLinks: collectStaleLinks(noteContentAfter),
             totalLinkCount: collectLinkPaths(noteContentAfter).length
@@ -325,47 +497,140 @@ describe('A note edited by another plugin while it is being moved', () => {
            * @returns The link paths that resolve to nothing.
            */
           function collectStaleLinks(content: string): string[] {
-            return collectLinkPaths(content).filter((linkPath) => !app.metadataCache.getFirstLinkpathDest(linkPath, DST_NOTE));
+            return collectLinkPaths(content).filter((linkPath) => !app.metadataCache.getFirstLinkpathDest(linkPath, destinationNote));
           }
-        } finally {
-          if (renameEventRef) {
-            app.vault.offref(renameEventRef);
+        },
+        input: {
+          destinationAttachmentFolder: DST_ATTACHMENT_FOLDER,
+          destinationNote: DST_NOTE,
+          isEditApplied: wasEditApplied
+        }
+      });
+    }
+
+    /**
+     * Takes the emulated plugin's listener off, puts the vault configs back, and removes the two folders this
+     * scenario created.
+     *
+     * Runs from a Node-side `finally`, so it happens however the scenario ends — a timed-out poll included.
+     * The listener is taken off through the same `context` that registered it, which is why this closure
+     * carries the `contextId` too.
+     *
+     * @param configs - What {@link stageVaultConfigs} read before overwriting them.
+     */
+    async function restore(configs: VaultConfigSnapshot): Promise<void> {
+      await evalInObsidian({
+        async callback({
+          alwaysUpdateLinks,
+          app,
+          attachmentFolderPath,
+          context,
+          folderPaths,
+          newLinkFormat
+        }): Promise<void> {
+          if (context.eventRef) {
+            app.vault.offref(context.eventRef);
           }
 
-          app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
-          app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
-          app.vault.setConfig('newLinkFormat', originalNewLinkFormat);
+          app.vault.setConfig('attachmentFolderPath', attachmentFolderPath);
+          app.vault.setConfig('alwaysUpdateLinks', alwaysUpdateLinks);
+          app.vault.setConfig('newLinkFormat', newLinkFormat);
           /*
            * Through the adapter, as the conflicting-plugin suite does: a fixture teardown must not travel
            * back through the very delete path this plugin patches, which would make the cleanup part of
            * what is under test.
            */
-          for (const folderPath of [SRC_FOLDER, DST_FOLDER]) {
+          for (const folderPath of folderPaths) {
             if (await app.vault.adapter.exists(folderPath)) {
               await app.vault.adapter.rmdir(folderPath, true);
             }
           }
+        },
+        contextId,
+        input: {
+          alwaysUpdateLinks: configs.alwaysUpdateLinks,
+          attachmentFolderPath: configs.attachmentFolderPath,
+          folderPaths: [SRC_FOLDER, DST_FOLDER],
+          newLinkFormat: configs.newLinkFormat
         }
-      },
-      input: {
-        attachmentCount: ATTACHMENT_COUNT,
-        pluginId: PLUGIN_ID,
-        sourcePluginId: SOURCE_PLUGIN_ID
-      }
-    });
+      });
+    }
 
-    /*
-     * The emulated second plugin really did edit the note inside the rename window. Without this the suite
-     * would silently degrade into a duplicate of the plain scale suite and prove nothing.
+    /**
+     * Reads the three vault configs this scenario overwrites, and overwrites them.
+     *
+     * @returns What was there before, for {@link restore}.
      */
-    expect(result.isEditApplied).toBe(true);
-    expect(result.noteContentAfter).toContain('A line inserted mid-rename');
+    async function stageVaultConfigs(): Promise<VaultConfigSnapshot> {
+      return await evalInObsidian({
+        callback({ app }): VaultConfigSnapshot {
+          const snapshot: VaultConfigSnapshot = {
+            alwaysUpdateLinks: app.vault.getConfig('alwaysUpdateLinks'),
+            attachmentFolderPath: app.vault.getConfig('attachmentFolderPath'),
+            newLinkFormat: app.vault.getConfig('newLinkFormat')
+          };
 
-    // The scenario staged what it claims to: the note kept all its embeds and every attachment moved.
-    expect(result.totalLinkCount).toBe(ATTACHMENT_COUNT);
-    expect(result.movedAttachmentCount).toBe(ATTACHMENT_COUNT);
+          app.vault.setConfig('attachmentFolderPath', './assets');
+          // Obsidian otherwise asks for confirmation through a modal, which would stall a headless run.
+          app.vault.setConfig('alwaysUpdateLinks', true);
+          // See the file header: the default shortest-path format would leave every rewritten link textually identical.
+          app.vault.setConfig('newLinkFormat', 'absolute');
 
-    // Every embed must still resolve, named individually so a regression shows which of them went stale.
-    expect(result.staleLinks).toStrictEqual([]);
+          return snapshot;
+        }
+      });
+    }
+
+    /**
+     * Waits, from Node, for every embed in the created note to reach the metadata cache.
+     *
+     * The handler builds its rewrite plan from that cache, so a half-resolved note would under-report the
+     * defect.
+     */
+    async function waitForEmbedsToIndex(): Promise<void> {
+      await pollInObsidian({
+        input: { srcNote: SRC_NOTE },
+        poll({ app, srcNote }): number {
+          const note = app.vault.getFileByPath(srcNote);
+          return note ? app.metadataCache.getFileCache(note)?.embeds?.length ?? 0 : 0;
+        },
+        timeoutInMilliseconds: INDEX_TIMEOUT_IN_MILLISECONDS,
+        timeoutMessage: 'the note\'s embeds never reached the metadata cache',
+        until: (embedCount: number): boolean => embedCount >= ATTACHMENT_COUNT
+      });
+    }
+
+    /**
+     * Waits, from Node, for every embed in the moved note to resolve again.
+     *
+     * The timeout is swallowed deliberately: a link left stale must be reported by the assertion above, which
+     * names WHICH links went stale — the broken build fails with exactly the contiguous tail after the
+     * insertion point, and that identity is the evidence for the mechanism — rather than as an opaque wait
+     * failure.
+     */
+    async function waitForLinksToSettle(): Promise<void> {
+      try {
+        await pollInObsidian({
+          input: { destinationNote: DST_NOTE },
+          async poll({ app, destinationNote }): Promise<number> {
+            const movedNote = app.vault.getFileByPath(destinationNote);
+            if (!movedNote) {
+              return -1;
+            }
+
+            const content = await app.vault.read(movedNote);
+            return [...content.matchAll(/!\[\[(?<linkPath>[^\]|]+)/g)]
+              .map((match) => match.groups?.['linkPath']?.trim() ?? '')
+              .filter((linkPath) => linkPath !== '' && !app.metadataCache.getFirstLinkpathDest(linkPath, destinationNote))
+              .length;
+          },
+          timeoutInMilliseconds: REWRITE_TIMEOUT_IN_MILLISECONDS,
+          timeoutMessage: 'some embeds in the moved note never resolved again',
+          until: (staleLinkCount: number): boolean => staleLinkCount === 0
+        });
+      } catch {
+        // Reported by the stale-link assertion instead.
+      }
+    }
   }, SCENARIO_TIMEOUT_IN_MILLISECONDS);
 });

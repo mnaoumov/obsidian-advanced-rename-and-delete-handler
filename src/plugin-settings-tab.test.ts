@@ -67,7 +67,7 @@ interface AppSettingLike {
 // The obsidian-test-mocks button: its DOM element is inert, and the registered handler runs through here.
 interface ButtonComponentMock {
   readonly buttonEl: HTMLButtonElement;
-  simulateClick__(): void;
+  simulateClick__: () => void;
 }
 
 interface SettingLike {

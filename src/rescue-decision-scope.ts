@@ -54,7 +54,7 @@ export interface RescueDecisionScopeResolveDecisionParams {
    *
    * @returns What the user answered.
    */
-  ask(this: void): Promise<RescueAnswer>;
+  readonly ask: (this: void) => Promise<RescueAnswer>;
 
   /**
    * The attachment about to be stranded.

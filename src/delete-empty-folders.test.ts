@@ -51,7 +51,7 @@ let getAllFoldersArguments: (boolean | undefined)[] = [];
 interface SweepParams {
   readonly emptyFolderBehavior?: EmptyFolderBehavior;
   readonly folderPaths: string[];
-  isPathIgnored?(this: void, path: string): boolean;
+  readonly isPathIgnored?: (this: void, path: string) => boolean;
 }
 
 function createApp(folderPaths: string[]): AppOriginal {

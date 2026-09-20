@@ -43,6 +43,7 @@ import {
   captureObsidianScreenshot,
   evalInObsidian,
   labelScreenshot,
+  pollInObsidian,
   readPngDimensions
 } from 'obsidian-integration-testing';
 import { getTemporaryVault } from 'obsidian-integration-testing/vitest-global-setup-plugin';
@@ -79,6 +80,14 @@ const RENAMED_TARGET_NOTE_PATH = 'Screenshots/Chapter two renamed.md';
 
 const IMAGES_DIRECTORY = join(process.cwd(), 'images', 'screenshots');
 
+/**
+ * The Node-side budget for `syncToDevice`'s push to land in the emulator's vault.
+ *
+ * Long because a cold AVD genuinely takes that; safe to be long because Node does the waiting, one short
+ * `poll` at a time, rather than one `evaluate` that Appium would cap at ~30s.
+ */
+const SYNC_TIMEOUT_IN_MILLISECONDS = 60_000;
+
 beforeAll(async () => {
   const vault = getTemporaryVault();
 
@@ -88,25 +97,38 @@ beforeAll(async () => {
   });
   await vault.syncToDevice();
 
-  await evalInObsidian({
-    async callback({ app, lib: { waitUntil }, sourceNotePath }) {
-      const SETTLE_TIMEOUT_IN_MILLISECONDS = 60_000;
-      const SETTLE_DELAY_IN_MILLISECONDS = 1000;
-
+  /*
+   * The waiting for the push to land happens in NODE, and this is the one wait here that could not simply be
+   * sized down instead. `syncToDevice` pushes the vault archive over adb and the emulator then has to notice
+   * it; a minute is a real budget on a cold AVD, which is why 60_000 was written. But Appium caps a single
+   * `evaluate` at ~30s and surfaces the cap as a bare `WebDriverError: script timeout` naming only
+   * `AppiumTransport.evaluate` — so the old shape asked for twice what one call could ever be given, and on
+   * exactly the slow device the budget was for it would have died blaming the harness. Node does the waiting
+   * now, one short `poll` at a time, so the minute is honoured.
+   */
+  await pollInObsidian({
+    input: { sourceNotePath: SOURCE_NOTE_PATH },
+    poll({ app, sourceNotePath }): boolean {
+      return Boolean(app.vault.getFileByPath(sourceNotePath));
+    },
+    start({ app }): void {
       app.changeTheme('obsidian');
+    },
+    timeoutInMilliseconds: SYNC_TIMEOUT_IN_MILLISECONDS,
+    timeoutMessage: 'the staged notes never appeared in the vault',
+    until: (hasArrived: boolean): boolean => hasArrived,
+    vaultPath: vaultPath()
+  });
 
-      await waitUntil({
-        message: 'the staged notes to appear in the vault',
-        predicate: () => Boolean(app.vault.getFileByPath(sourceNotePath)),
-        timeoutInMilliseconds: SETTLE_TIMEOUT_IN_MILLISECONDS
-      });
+  await evalInObsidian({
+    async callback({ app }): Promise<void> {
+      const SETTLE_DELAY_IN_MILLISECONDS = 1000;
 
       // Otherwise Obsidian asks for confirmation through a modal, which a capture run cannot answer.
       app.vault.setConfig('alwaysUpdateLinks', true);
 
       await sleep(SETTLE_DELAY_IN_MILLISECONDS);
     },
-    input: { sourceNotePath: SOURCE_NOTE_PATH },
     vaultPath: vaultPath()
   });
 });
@@ -136,7 +158,14 @@ describe('mobile store screenshots', () => {
 async function openSettingsTab(): Promise<SettingsProbe> {
   return await evalInObsidian({
     async callback({ app, lib: { waitUntil }, pluginId }): Promise<SettingsProbe> {
-      const RENDER_TIMEOUT_IN_MILLISECONDS = 30_000;
+      /*
+       * Under the transport's ~30s per-closure cap, not at it. Appium gives one `evaluate` ~30s and reports
+       * the cap as a bare `WebDriverError: script timeout` naming only `AppiumTransport.evaluate`, so the
+       * three budgets below are summed against it: at 30_000 the render alone sat AT the cap and the closure
+       * declared 32 000, which no run could ever have honoured. The tab renders from settings this plugin
+       * already holds, so twenty seconds on a phone is generous.
+       */
+      const RENDER_TIMEOUT_IN_MILLISECONDS = 20_000;
       const OPEN_DELAY_IN_MILLISECONDS = 500;
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
 
@@ -184,8 +213,14 @@ async function renameTargetAndReadResult(): Promise<RenameProbe> {
       sourceNotePath,
       targetNotePath
     }): Promise<RenameProbe> {
+      /*
+       * Under the transport's ~30s per-closure cap, not at it. Five waits are summed here — two settle
+       * delays, the rename race, and two renders — and at 30_000 per render that came to 71 000, more than
+       * twice what Appium gives one `evaluate` before killing it and blaming the harness. At 8000 it is
+       * 27 000. Both renders are this plugin's own rewrite of a single link in a two-note vault.
+       */
       const RENAME_SETTLE_IN_MILLISECONDS = 8000;
-      const RENDER_TIMEOUT_IN_MILLISECONDS = 30_000;
+      const RENDER_TIMEOUT_IN_MILLISECONDS = 8000;
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
 
       // The settings modal is still up from the previous shot.

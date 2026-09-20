@@ -65,7 +65,7 @@ export interface PickRescueNotePathParams {
    * @param notePath - The vault-relative path of the note.
    * @returns The rank.
    */
-  rank(this: void, notePath: string): number;
+  readonly rank: (this: void, notePath: string) => number;
 
   /**
    * The vault-relative paths of the notes that still reference the attachment once the deletion is done.
