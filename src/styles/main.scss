@@ -4,6 +4,14 @@
     flex-wrap: wrap;
     gap: var(--size-4-2);
     justify-content: flex-end;
+
+    /* A label that had to grow a path to stay distinguishable wraps inside its own button, rather than
+       widening the dialog past the screen. */
+    button {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
   }
 
   &.rescue-ambiguity-notes {
