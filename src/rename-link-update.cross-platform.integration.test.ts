@@ -27,6 +27,22 @@ describe('Renaming a note', () => {
   it('rewrites the links pointing at it', async () => {
     const result = await evalInObsidian({
       async callback({ app, lib: { waitUntil } }): Promise<RenameLinkUpdateResult> {
+        /*
+         * Under the transport's ~30s per-closure cap, not at it. The whole closure is one transport call, so
+         * what bounds it is the SUM of the four budgets below — 25 200 ms — rather than any one of them. They
+         * used to read 40 000 / 6000 / 20 000 / 200, which sums to 66 200: more than twice a cap the call
+         * would have been killed at first, and reported as a bare transport timeout naming the harness rather
+         * than whichever wait overran.
+         *
+         * What each one waits on is a two-note vault resolving a single link and then rewriting it, which
+         * lands in well under a second, so the smaller numbers cost nothing. There is no long step here to
+         * move to `pollInObsidian`.
+         */
+        const BACKLINK_TIMEOUT_IN_MILLISECONDS = 8000;
+        const RENAME_SETTLE_IN_MILLISECONDS = 5000;
+        const REWRITE_DEADLINE_IN_MILLISECONDS = 12_000;
+        const REWRITE_POLL_INTERVAL_IN_MILLISECONDS = 200;
+
         const stamp = `${Date.now().toString()}-${Math.floor(performance.now()).toString()}`;
         const folder = `rename-links-${stamp}`;
         const targetPath = `${folder}/target-${stamp}.md`;
@@ -43,7 +59,7 @@ describe('Renaming a note', () => {
         await waitUntil({
           message: 'the link resolves to the target',
           predicate: () => app.metadataCache.getBacklinksForFile(target).keys().length > 0,
-          timeoutInMilliseconds: 40_000
+          timeoutInMilliseconds: BACKLINK_TIMEOUT_IN_MILLISECONDS
         });
 
         const before = await app.vault.read(source);
@@ -53,17 +69,17 @@ describe('Renaming a note', () => {
           renamePromise.catch(() => {
             // Lingering `onCleanCache`; the effect is polled below.
           }),
-          sleep(6000)
+          sleep(RENAME_SETTLE_IN_MILLISECONDS)
         ]);
 
         // Polled rather than awaited, so a stale link is reported as a failed expectation with both
         // Texts attached rather than as an opaque timeout.
-        const deadline = Date.now() + 20_000;
+        const deadline = Date.now() + REWRITE_DEADLINE_IN_MILLISECONDS;
         while (Date.now() < deadline) {
           if ((await app.vault.read(source)) !== before) {
             break;
           }
-          await sleep(200);
+          await sleep(REWRITE_POLL_INTERVAL_IN_MILLISECONDS);
         }
 
         const after = await app.vault.read(source);

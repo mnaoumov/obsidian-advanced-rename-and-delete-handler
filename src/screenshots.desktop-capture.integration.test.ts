@@ -169,7 +169,14 @@ beforeAll(async () => {
 
   await evalInObsidian({
     async callback({ app, lib: { waitUntil }, sourceNotePath }) {
-      const SETTLE_TIMEOUT_IN_MILLISECONDS = 30_000;
+      /*
+       * Under the transport's ~30s per-closure cap, not at it. The whole closure is one transport call, so
+       * the two budgets below are summed: 30_000 + 1000 put it 1000 ms PAST the cap, which is the one place
+       * a number cannot be — the call is killed there and reported as a bare transport timeout naming the
+       * harness. The vault was populated and synced before this call was made, so what the wait is for is the
+       * index noticing two notes.
+       */
+      const SETTLE_TIMEOUT_IN_MILLISECONDS = 20_000;
       const SETTLE_DELAY_IN_MILLISECONDS = 1000;
 
       app.changeTheme('obsidian');
@@ -400,8 +407,15 @@ async function renameTargetAndReadResult(): Promise<RenameProbe> {
       sourceNotePath,
       targetNotePath
     }): Promise<RenameProbe> {
+      /*
+       * Under the transport's ~30s per-closure cap, not at it. The whole closure is one transport call, so
+       * these three are summed over the five waits they cover — two settle delays, the rename race, and two
+       * renders — and at 20_000 per render that came to 49 000, well past a cap the call would have been
+       * killed at first. At 9000 it is 27 000. Both renders are this plugin's own rewrite of a single link in
+       * a two-note vault, which lands in well under a second.
+       */
       const RENAME_SETTLE_IN_MILLISECONDS = 6000;
-      const RENDER_TIMEOUT_IN_MILLISECONDS = 20_000;
+      const RENDER_TIMEOUT_IN_MILLISECONDS = 9000;
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
 
       // The settings modal is still up from the previous shot.

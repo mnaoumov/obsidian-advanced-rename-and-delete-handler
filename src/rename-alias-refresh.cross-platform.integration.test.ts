@@ -51,7 +51,7 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
-  migrateSettings(params: MigrateSettingsParamsLike): Promise<MigrateSettingsResultLike>;
+  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 interface PluginWithApiLike {
@@ -97,13 +97,14 @@ describe('Renaming a note whose backlink aliases its old base name', () => {
         const NEW_TARGET = `${FOLDER}/222.md`;
         const REFERENCING_NOTE = `${FOLDER}/referencing-note.md`;
         /*
-         * Sized so this closure's declared waits SUM to under the transport's ~30s per-closure cap, rather
-         * than each one sitting AT it. At 30_000 the ceiling was unreachable: the eval is killed at the cap
-         * first, and reported as a bare transport timeout naming the harness rather than the wait that
-         * actually overran. What is waited on here lands in well under a second, so a budget this size
-         * costs nothing — a wait that can genuinely run long belongs in `pollInObsidian`, with Node doing
-         * the waiting — as the two note-move suites here still need to, since a 30-attachment move can genuinely
-         * outrun the cap no matter what ceiling is written above it.
+         * Under the transport's ~30s per-closure cap, not at it. This closure's declared waits SUM to under
+         * the cap rather than each one sitting AT it: at 30_000 the ceiling was unreachable, because the eval
+         * is killed at the cap first and reported as a bare transport timeout naming the harness rather than
+         * the wait that actually overran. A helper's budget is charged once per CALL SITE, so the number
+         * below is the whole closure's allowance divided by how many times it actually runs. What is waited
+         * on here lands in well under a second, so a budget this size costs nothing — a wait that can
+         * genuinely run long belongs in `pollInObsidian`, with Node doing the waiting, as the two note-move
+         * suites here now do.
          */
         const WAIT_TIMEOUT_IN_MILLISECONDS = 8000;
 

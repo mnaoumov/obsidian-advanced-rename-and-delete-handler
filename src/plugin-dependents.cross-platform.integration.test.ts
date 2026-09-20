@@ -23,7 +23,18 @@ const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const DEPENDENT_PLUGIN_ID = 'editor';
 const DEPENDENT_PLUGIN_NAME = 'A dependent plugin';
 const DEPENDENTS_HEADING = 'Plugins that depend on this one';
-const WAIT_TIMEOUT_IN_MILLISECONDS = 20_000;
+
+/*
+ * Under the transport's ~30s per-closure cap, not at it. The whole closure is one transport call, so what
+ * matters is the SUM of what it declares, not what any single wait asks for — and this budget is charged
+ * FIVE times: `openOwnTab` runs three times, and two more waits are written in the closure's own body, for
+ * 25 000 ms in total. At 20_000 the sum was 100 000, four times a cap the call would have been killed at
+ * first, reported as a bare transport timeout naming the harness rather than the wait that overran.
+ *
+ * Every one of the five waits on a settings tab opening or a settings row appearing, which land in a frame
+ * or two, so a fifth of the old number costs nothing. There is no long step here to move to `pollInObsidian`.
+ */
+const WAIT_TIMEOUT_IN_MILLISECONDS = 5000;
 
 interface DependentsProbeResult {
   readonly buttonTexts: string[];

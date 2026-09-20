@@ -111,13 +111,20 @@ const DEMO_VAULT_TIMEOUT_IN_MILLISECONDS = 600_000;
  *
  * A whole `evalInObsidian` callback is ONE `Runtime.evaluate`, so this bounds the entire staging + waiting +
  * assertion sequence a suite runs inside Obsidian, not a single round trip. The transport's own default is
- * 30s, which silently truncates any suite that raises its per-test budget to do real work — the note-move
- * suites move thirty attachments and then wait for the rewrite to settle. Those were killed at 30s by the
- * transport while vitest was still waiting, and reported as `CDP command timed out ... Runtime.evaluate`,
+ * 30s, which silently truncates any suite that raises its per-test budget to do real work: such a call is
+ * killed at 30s while vitest is still waiting, and reported as `CDP command timed out ... Runtime.evaluate`,
  * naming neither the `waitUntil` that was pending nor the assertion that never ran.
  *
  * Set above the largest per-test budget in the suite, so the overrun is always reported by vitest, which
  * knows what was being awaited. Nothing hangs longer for it: vitest's own timeout is the backstop.
+ *
+ * **It is a backstop, NOT a budget a closure may spend.** This used to be justified by the note-move suites,
+ * which moved thirty attachments and waited for the rewrite inside one call — and they each declared
+ * 240 000 ms, i.e. exactly this number, so even raised it bounded nothing. They wait in Node now, one short
+ * `pollInObsidian` `poll` at a time, and every closure in this repo is sized under the transport's 30s
+ * DEFAULT rather than under this. That is what `obsidian-dev-utils/no-over-cap-wait-in-eval-in-obsidian`
+ * enforces — at the default cap, with no per-project override — so a budget written against this number
+ * would be red there, and would mean nothing on the Android and performance projects, which do not raise it.
  */
 const CDP_COMMAND_TIMEOUT_IN_MILLISECONDS = 240_000;
 
