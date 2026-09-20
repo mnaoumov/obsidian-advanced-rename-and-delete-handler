@@ -37,7 +37,7 @@ export interface AdvancedRenameAndDeleteHandlerApi {
    *
    * @returns The current values.
    */
-  getSettings(): HandedOverSettings;
+  getSettings: () => HandedOverSettings;
 
   /**
    * Whether this plugin leaves the path alone entirely, per its include and exclude lists.
@@ -49,7 +49,7 @@ export interface AdvancedRenameAndDeleteHandlerApi {
    * @param path - The path to test, from the vault root.
    * @returns `true` when the path is ignored.
    */
-  isPathIgnored(path: string): boolean;
+  isPathIgnored: (path: string) => boolean;
 
   /**
    * Whether the path names an attachment even though its extension says otherwise — `.excalidraw.md` being
@@ -62,7 +62,7 @@ export interface AdvancedRenameAndDeleteHandlerApi {
    * @param path - The path to test, from the vault root.
    * @returns `true` when the path is treated as an attachment.
    */
-  isTreatedAsAttachment(path: string): boolean;
+  isTreatedAsAttachment: (path: string) => boolean;
 
   /**
    * Offers the user a set of settings values another plugin proposes, and applies what they approve.
@@ -73,7 +73,7 @@ export interface AdvancedRenameAndDeleteHandlerApi {
    * @param params - The proposal.
    * @returns What the user approved.
    */
-  migrateSettings(params: MigrateSettingsParams): Promise<MigrateSettingsResult>;
+  migrateSettings: (params: MigrateSettingsParams) => Promise<MigrateSettingsResult>;
 }
 
 /**

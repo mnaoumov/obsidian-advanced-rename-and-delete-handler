@@ -22,7 +22,7 @@ interface PluginSettingsTabConstructorParams extends PluginSettingsTabBaseConstr
    *
    * @returns The plugin gate component.
    */
-  getPluginGateComponent(this: void): PluginGateComponent;
+  readonly getPluginGateComponent: (this: void) => PluginGateComponent;
 
   /**
    * The plugins that declare this one as a dependency, listed at the top of the tab.

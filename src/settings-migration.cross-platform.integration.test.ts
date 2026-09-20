@@ -54,8 +54,8 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
-  getSettings(): CurrentSettingsLike;
-  migrateSettings(params: MigrateSettingsParamsLike): Promise<MigrateSettingsResultLike>;
+  getSettings: () => CurrentSettingsLike;
+  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 interface PluginWithApiLike {

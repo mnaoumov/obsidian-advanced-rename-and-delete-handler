@@ -57,7 +57,7 @@ export interface DeleteEmptyFoldersParams {
   /**
    * Whether a path is outside what this plugin is allowed to touch, per its include/exclude lists.
    */
-  isPathIgnored(this: void, path: string): boolean;
+  readonly isPathIgnored: (this: void, path: string) => boolean;
 
   /**
    * Shows the sweep's progress.
