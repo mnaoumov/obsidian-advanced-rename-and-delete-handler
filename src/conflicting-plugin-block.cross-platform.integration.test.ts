@@ -134,10 +134,16 @@ describe('A plugin that still owns its own rename/delete handler', () => {
             isStillInstalled: Object.hasOwn(app.plugins.manifests, pluginId)
           };
 
-          // And now the other half: take the conflict away and the surface comes back.
+          /*
+           * And now the other half: take the conflict away and the surface comes back, with this plugin
+           * never having left the enabled list. Disabling the stub is enough — only an ENABLED plugin
+           * counts as a conflict — and the folder is left for the cleanup below to remove once.
+           *
+           * Reloaded rather than waited on: the gate refreshes itself when a conflicting plugin announces
+           * its own unload, and this stub is a bare Obsidian plugin that broadcasts nothing. A real one
+           * built on the same library needs no reload here.
+           */
           await app.plugins.disablePluginAndSave(conflictingPluginId);
-          await adapter.rmdir(pluginFolder, true);
-          await app.plugins.loadManifests();
           await app.plugins.disablePlugin(pluginId);
           await app.plugins.enablePlugin(pluginId);
 
