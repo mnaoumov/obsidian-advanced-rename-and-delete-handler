@@ -6,7 +6,7 @@
 
 This plugin takes over renaming and deleting for the whole vault: links follow the note, the files it owns travel with it, and what a deletion leaves behind is cleaned up on terms you choose.
 
-**It is the single owner of that behavior in a vault.** Several plugins used to carry their own copy of this handler, and two handlers acting on one rename corrupt links between them. Rather than compete, this plugin checks on load and refuses to run while a plugin that still owns its own handler is installed, naming the ones to update; once they are, it starts on its own.
+**It is the single owner of that behavior in a vault.** Several plugins used to carry their own copy of this handler, and two handlers acting on one rename corrupt links between them. Rather than compete, this plugin stands aside while one of them is enabled at a version that still owns its handler: it stays enabled and does nothing, and its settings tab says which plugin it is waiting for and what version to update to. Update that plugin and this one picks the work back up on its own — no restart, and nothing here to switch back on.
 
 <!-- markdownlint-disable MD033 -->
 

@@ -11,10 +11,12 @@
  * 2. The plugin's own notice after a rename, with the rewritten link on screen behind it. A rename is a
  *    process rather than a state, so the notice is what makes it visible in a single frame; the shot
  *    asserts the link actually moved rather than trusting the notice.
- * 3. The refusal notice, with a plugin installed that still owns its own rename/delete handler. It is
+ * 3. The blocked notice, with a plugin installed that still owns its own rename/delete handler. It is
  *    the first thing a user with one of those installed will see.
  *
- * The refusal shot is LAST because it unloads the plugin — nothing can be captured of it afterwards.
+ * The blocked shot is LAST because it shuts the plugin's feature surface — nothing of that surface can be
+ * captured afterwards. The plugin itself stays enabled and loaded, which is the point of the frame: it is
+ * waiting for an update to the OTHER plugin, not broken and not switched off.
  *
  * **Shot 1 renders at all because the settings modal stays in the photographed window.** `app.setting` is
  * popout-capable, and left at Obsidian's default it opens the settings in a second Electron window that
@@ -58,7 +60,7 @@
  * **What each `it` asserts is the real guard, and it is deliberately more than the shot needs to render.**
  * A capture that photographs a degraded frame and overwrites a good one passes silently otherwise: shot 1
  * checks all thirteen settings rows against its "every option" caption, shot 2 checks that the rewritten
- * link is in the ACTIVE file and not merely on disk, and shot 3 checks that the refusal notice names the
+ * link is in the ACTIVE file and not merely on disk, and shot 3 checks that the blocked notice names the
  * plugin that took over. Each one is a claim the frame makes to a store visitor.
  */
 
@@ -82,7 +84,8 @@ import {
   it
 } from 'vitest';
 
-interface RefusalProbe {
+interface BlockedProbe {
+  readonly hasFeatureCommand: boolean;
   readonly isLoaded: boolean;
   readonly noticeText: string;
 }
@@ -110,7 +113,8 @@ const RENAMED_TARGET_NOTE_PATH = 'Screenshots/Chapter two renamed.md';
 
 const RENAME_NOTICE_TEXT = 'Updated';
 const RENAMED_LINK_TEXT = 'renamed';
-const REFUSAL_NOTICE_TEXT = 'Not running';
+const BLOCKED_NOTICE_TEXT = 'does nothing while';
+const FEATURE_COMMAND_ID = `${PLUGIN_ID}:delete-empty-folders`;
 
 /**
  * The first-load notice, which every capture run meets and no frame here wants.
@@ -123,8 +127,8 @@ const REFUSAL_NOTICE_TEXT = 'Not running';
  * toast nobody dismissed makes of them.
  *
  * So `beforeAll` dismisses it, exactly as clicking it would, and shots 1 and 2 assert it did not come back.
- * Shot 3 never sees it: the refusal path unloads the plugin, and by then the first load has written the file
- * that makes "once" true.
+ * Shot 3 never sees it: the blocked path never reaches the component that shows it, and by then the first
+ * load has written the file that makes "once" true anyway.
  */
 const FIRST_LOAD_NOTICE_TEXT = 'doing nothing yet';
 
@@ -243,11 +247,18 @@ describe('desktop store screenshots', () => {
   it('3 - what it does when another plugin already owns renames', async () => {
     const probe = await installConflictAndReload();
 
-    expect(probe.noticeText).toContain(REFUSAL_NOTICE_TEXT);
+    expect(probe.noticeText).toContain(BLOCKED_NOTICE_TEXT);
 
     // Naming the plugin that took over is the whole point of the notice, and of this frame.
     expect(probe.noticeText).toContain(CONFLICTING_PLUGIN_NAME);
-    expect(probe.isLoaded).toBe(false);
+
+    /*
+     * Enabled-but-inert, and the frame's caption depends on BOTH halves. Still loaded, so a store reader
+     * sees a plugin that is waiting rather than one that switched itself off; no feature command, so the
+     * frame is not a notice over a plugin that went on working regardless.
+     */
+    expect(probe.isLoaded).toBe(true);
+    expect(probe.hasFeatureCommand).toBe(false);
     await shoot(3, 'One owner per vault, and it says so rather than fighting');
   });
 });
@@ -284,19 +295,20 @@ async function blurEditor(): Promise<void> {
 }
 
 /**
- * Installs a stub under a conflicting plugin's id and reloads this plugin, so its refusal notice is on
+ * Installs a stub under a conflicting plugin's id and reloads this plugin, so its blocked notice is on
  * screen.
  *
- * @returns The notice, and whether this plugin unloaded itself.
+ * @returns The notice, whether this plugin is still loaded, and whether its feature surface ran.
  */
-async function installConflictAndReload(): Promise<RefusalProbe> {
+async function installConflictAndReload(): Promise<BlockedProbe> {
   return await evalInObsidian({
     async callback({
       app,
       conflictingPluginId,
+      featureCommandId,
       lib: { waitUntil },
       pluginId
-    }): Promise<RefusalProbe> {
+    }): Promise<BlockedProbe> {
       const RENDER_TIMEOUT_IN_MILLISECONDS = 20_000;
       const RESIZE_SETTLE_DELAY_IN_MILLISECONDS = 2000;
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
@@ -308,10 +320,10 @@ async function installConflictAndReload(): Promise<RefusalProbe> {
       const pluginFolder = `${app.vault.configDir}/plugins/${conflictingPluginId}`;
       await app.vault.adapter.mkdir(pluginFolder);
       /*
-       * The manifest's `name` is NOT what the notice renders — `src/conflicting-plugins.ts` carries its own
-       * display name per entry and looks the plugin up by `id`. Verified 2026-09-03 by renaming this field
-       * and re-running: the frame came back byte-identical. Only `id` and `version` matter, the
-       * latter because it must sit below that entry's `minSupportedVersion` for the refusal to fire at all.
+       * The manifest's `name` is NOT what the notice renders — `Plugin.getPluginConflicts()` carries its own
+       * `pluginName` per entry and looks the plugin up by `id`. Verified 2026-09-03 by renaming this field
+       * and re-running: the frame came back byte-identical. Only `id` and `version` matter, the latter
+       * because it must fall inside that entry's `conflictingVersionRange` for the block to hold at all.
        */
       await app.vault.adapter.write(
         `${pluginFolder}/manifest.json`,
@@ -336,20 +348,23 @@ async function installConflictAndReload(): Promise<RefusalProbe> {
       await app.plugins.enablePlugin(pluginId);
 
       await waitUntil({
-        message: 'the refusal notice to appear',
-        predicate: () => document.body.textContent.includes('Not running: these plugins'),
+        message: 'the blocked notice to appear',
+        predicate: () => document.body.textContent.includes('does nothing while'),
         timeoutInMilliseconds: RENDER_TIMEOUT_IN_MILLISECONDS
       });
 
       await sleep(SETTLE_DELAY_IN_MILLISECONDS);
 
       return {
+        // Registered by `onloadImpl`, which the closed gate never runs — so this is the surface's absence.
+        hasFeatureCommand: Object.hasOwn(app.commands.commands, featureCommandId),
         isLoaded: Object.hasOwn(app.plugins.plugins, pluginId),
         noticeText: [...document.querySelectorAll('.notice')].map((notice) => notice.textContent).join(' ')
       };
     },
     input: {
       conflictingPluginId: CONFLICTING_PLUGIN_ID,
+      featureCommandId: FEATURE_COMMAND_ID,
       pluginId: PLUGIN_ID
     },
     vaultPath: vaultPath()

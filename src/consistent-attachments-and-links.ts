@@ -9,8 +9,8 @@
  * to tell the copies apart, and running either one sweeps the vault again.
  *
  * That is annoying rather than destructive, so this is declared as a WARNING and both plugins keep
- * running — unlike {@link conflicting-plugins!findInstalledConflicts}, which refuses outright, because two
- * rename/delete handlers acting on one rename corrupt links.
+ * running — unlike the BLOCKING conflicts `Plugin.getPluginConflicts` declares beside it, which hold this
+ * plugin's feature surface shut, because two rename/delete handlers acting on one rename corrupt links.
  */
 
 /**
@@ -18,10 +18,10 @@
  *
  * Bounded at BOTH ends, and each end is load-bearing:
  *
- * - Below `4.0.0` that plugin still owns a rename/delete handler, which
- *   {@link conflicting-plugins!findInstalledConflicts} already refuses to run beside. Warning about the
- *   duplicated command as well would put two notices on screen for one plugin, the second of them about a
- *   command this plugin is not registering anyway, since it is not running.
+ * - Below `4.0.0` that plugin still owns a rename/delete handler, which the `Block` conflict
+ *   `Plugin.getPluginConflicts` declares for the same plugin id already covers. Warning about the duplicated
+ *   command as well would put two notices on screen for one plugin, the second of them about a command this
+ *   plugin is not registering anyway, since its feature surface is shut.
  * - `5.0.0` is that plugin's next major, and dropping a user-facing command is a breaking change for it,
  *   so the release that gives the command up cannot be a minor. Nothing below it has shipped that removal
  *   yet.

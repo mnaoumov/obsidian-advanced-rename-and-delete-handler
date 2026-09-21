@@ -65,7 +65,6 @@
     "obsidian-dev-utils": "^105.0.0",
     "obsidian-integration-testing": "^12.1.0",
     "obsidian-test-mocks": "^5.1.0",
-    "semver": "^7.8.5",
     "sharp": "^0.35.4",
     "vitest": "^5.0.0"
   }

@@ -5,7 +5,7 @@
  * Mobile on a real Android emulator and writing `images/screenshots/screenshot-mobile-N.png`.
  *
  * TWO shots, the mobile half of the desktop set: the settings panel, and the plugin's notice after a
- * rename. The desktop set's third shot — the refusal — is not repeated here, because it says the same
+ * rename. The desktop set's third shot — the block — is not repeated here, because it says the same
  * thing at half the width and the store listing does not need it twice.
  *
  * **Opening the settings modal takes one extra step, and without it nothing renders.** `app.setting`
