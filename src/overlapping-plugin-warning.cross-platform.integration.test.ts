@@ -9,13 +9,15 @@ import {
  * The other half of this plugin's overlap handling, driven end to end: with a plugin installed that still
  * ships its own copy of the `delete-empty-folders` command, this one says so and BOTH keep running.
  *
- * That is the whole distinction from `conflicting-plugin-refusal.cross-platform.integration.test.ts`. Two
- * rename/delete handlers corrupt a vault, so that overlap is answered by refusing to load; a duplicated
- * command merely doubles a palette entry, so refusing would cost the user more than the overlap does. The
- * observable difference is that this plugin is still loaded afterwards.
+ * That is the whole distinction from `conflicting-plugin-block.cross-platform.integration.test.ts`. Two
+ * rename/delete handlers corrupt a vault, so that overlap is declared at `Block` severity and holds this
+ * plugin's feature surface shut; a duplicated command merely doubles a palette entry, so blocking would cost
+ * the user more than the overlap does. The observable difference is that the feature surface is still there
+ * afterwards — both plugins run, and this one says so.
  *
- * The stub is installed at a version ABOVE the rename/delete refusal's floor on purpose — otherwise the
- * refusal fires first, this plugin unloads, and the warning is never reached.
+ * The stub is installed at a version ABOVE the rename/delete block's ceiling on purpose — `<4.0.0` blocks
+ * and `>=4.0.0 <5.0.0` warns, for the same plugin id, so a lower version would shut the surface and the
+ * warning would never be reached.
  *
  * Cross-platform: an overlapping plugin is just as installable on a phone, and the manifest declares
  * `isDesktopOnly: false`.
@@ -95,7 +97,7 @@ describe('A plugin that still ships its own Delete empty folders command', () =>
           return {
             enableError,
             // The point of the whole test: a warning leaves the plugin running, where the rename/delete
-            // Refusal would have unloaded it.
+            // Block would have held its feature surface shut.
             isLoadedAfter: Object.hasOwn(app.plugins.plugins, pluginId),
             isLoadedBefore,
             isOverlapEnabled: app.plugins.enabledPlugins.has(overlappingPluginId),

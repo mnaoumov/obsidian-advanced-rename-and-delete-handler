@@ -11,12 +11,10 @@ import { PluginDataHandler } from 'obsidian-dev-utils/obsidian/data-handler';
 import { PluginBase } from 'obsidian-dev-utils/obsidian/plugin/plugin';
 import { PluginEventSourceImpl } from 'obsidian-dev-utils/obsidian/plugin/plugin-event-source';
 
-import type { InstalledConflict } from './conflicting-plugins.ts';
 import type { AdvancedRenameAndDeleteHandlerApi } from './plugin-api.ts';
 import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
 
 import { DeleteEmptyFoldersCommandHandler } from './command-handlers/delete-empty-folders-command-handler.ts';
-import { findInstalledConflicts } from './conflicting-plugins.ts';
 import {
   CONSISTENT_ATTACHMENTS_AND_LINKS_DELETE_EMPTY_FOLDERS_VERSION_RANGE,
   CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
@@ -37,10 +35,77 @@ import { RescuePathResolver } from './rescue-path-resolver.ts';
 const DELETE_EMPTY_FOLDERS_OVERLAP_REASON = 'Both plugins add a Delete empty folders command, so it appears'
   + ' twice in the command palette and running either copy sweeps the vault again.';
 
+/**
+ * A plugin that used to own a rename/delete handler of its own.
+ */
+interface RenameDeleteHandlerOwner {
+  /**
+   * The first version that no longer registers a handler of its own, and is therefore safe to run alongside
+   * this plugin.
+   */
+  readonly firstSupportedVersion: string;
+
+  /**
+   * The plugin id, as listed in Obsidian's community plugin registry.
+   */
+  readonly pluginId: string;
+
+  /**
+   * The display name, used when telling the user what to update.
+   */
+  readonly pluginName: string;
+}
+
+/**
+ * The plugins that used to carry a rename/delete handler of their own, and the version of each that gave it
+ * up.
+ *
+ * Five of them shipped that handler, from `obsidian-dev-utils`. Two handlers acting on one rename corrupt
+ * links and move attachments twice, and there is no reliable way for this plugin to win that race: the
+ * library elects a handler by registry order, but its `runAsyncLinkUpdate` patch sits outside that election,
+ * so whichever plugin loaded first keeps a hand on the wheel. Every scheme for seizing control from inside is
+ * therefore load-order dependent. So this plugin does not compete — it declares each of them as a BLOCKING
+ * conflict and stands aside while one of them is enabled at a version that still owns the handler.
+ *
+ * Every version named here has shipped, measured 2026-09-20: Custom Attachment Location 12.0.1, Consistent
+ * Attachments and Links 4.0.1, Better Markdown Links 5.0.1, External Rename Handler 4.0.1 and Frontmatter
+ * Markdown Links 3.0.2. So the block can dead-end nobody — the update each entry asks for exists — which is
+ * what the wording below is written against.
+ *
+ * TODO: drop an entry outright once every version that still owns a handler is old enough to have aged out.
+ */
+const RENAME_DELETE_HANDLER_OWNERS: readonly RenameDeleteHandlerOwner[] = [
+  {
+    firstSupportedVersion: '12.0.0',
+    pluginId: 'obsidian-custom-attachment-location',
+    pluginName: 'Custom Attachment Location'
+  },
+  {
+    firstSupportedVersion: '4.0.0',
+    pluginId: CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
+    pluginName: CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME
+  },
+  {
+    firstSupportedVersion: '5.0.0',
+    pluginId: 'better-markdown-links',
+    pluginName: 'Better Markdown Links'
+  },
+  {
+    firstSupportedVersion: '4.0.0',
+    pluginId: 'external-rename-handler',
+    pluginName: 'External Rename Handler'
+  },
+  {
+    firstSupportedVersion: '3.0.0',
+    pluginId: 'frontmatter-markdown-links',
+    pluginName: 'Frontmatter Markdown Links'
+  }
+];
+
 export class Plugin extends PluginBase {
   /**
-   * This plugin's public API, or `null` before it has loaded — or when it refused to run because a
-   * conflicting plugin is installed.
+   * This plugin's public API, or `null` before it has loaded — or while a blocking conflict is holding its
+   * feature surface shut.
    *
    * The registry — `watchPluginApi` from `obsidian-dev-utils` — is the path a consumer should take: it
    * negotiates the contract version, waits out the load order and revokes the handle when this plugin
@@ -58,7 +123,8 @@ export class Plugin extends PluginBase {
    *
    * Published by the base rather than by hand, so that the handle is revoked with the feature surface and
    * the `plugin-loaded` broadcast carries the contract version — which is what a plugin declaring this one
-   * as a dependency waits for. Nothing is declared when the plugin refused to run.
+   * as a dependency waits for. Nothing is declared while a blocking conflict holds, because the feature
+   * surface that builds the API never ran.
    *
    * @returns The declaration, or none.
    */
@@ -76,8 +142,31 @@ export class Plugin extends PluginBase {
     ];
   }
 
+  /**
+   * Declares what this plugin refuses to run beside, and what it merely warns about.
+   *
+   * The two severities are not two mechanisms: a plugin that still owns a rename/delete handler corrupts
+   * links when it acts on the same rename as this one, so it BLOCKS; a plugin that merely duplicates the
+   * Delete empty folders command costs the user a second palette entry, so it WARNS and both keep running.
+   *
+   * Blocked means enabled-but-inert. This plugin stays in the user's enabled list, says what it is waiting
+   * for in its settings tab, and comes back the moment the conflict lifts — with no restart, and with
+   * nothing to switch back on by hand.
+   *
+   * @returns The declared conflicts, blocking ones first.
+   */
   protected override getPluginConflicts(): PluginConflict[] {
     return [
+      ...RENAME_DELETE_HANDLER_OWNERS.map((owner) => ({
+        conflictingVersionRange: `<${owner.firstSupportedVersion}`,
+        pluginId: owner.pluginId,
+        pluginName: owner.pluginName,
+        reason: `This plugin is waiting for ${owner.pluginName} ${owner.firstSupportedVersion} or newer.`
+          + ' Until then that plugin handles renames and deletes itself, and two handlers acting on one'
+          + ' rename corrupt links between them. Update it and this plugin picks the work back up on its'
+          + ' own, with no restart and nothing here to switch back on.',
+        severity: PluginConflictSeverity.Block
+      })),
       {
         conflictingVersionRange: CONSISTENT_ATTACHMENTS_AND_LINKS_DELETE_EMPTY_FOLDERS_VERSION_RANGE,
         pluginId: CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
@@ -89,17 +178,6 @@ export class Plugin extends PluginBase {
   }
 
   protected override async onloadImpl(): Promise<void> {
-    /*
-     * Before anything else, and before anything that awaits. A plugin that still owns a rename/delete
-     * handler of its own would fight this one over every rename, so this plugin stands aside rather than
-     * registering a second handler and hoping to win.
-     */
-    const conflicts = findInstalledConflicts(this.app);
-    if (conflicts.length > 0) {
-      await this.refuseToRun(conflicts);
-      return;
-    }
-
     const pluginSettingsComponent = this.addChild(
       new PluginSettingsComponentImpl({
         app: this.app,
@@ -188,36 +266,5 @@ export class Plugin extends PluginBase {
         pluginVersion: this.manifest.version
       })
     ]);
-  }
-
-  /**
-   * Reports the conflicting plugins and disables this one.
-   *
-   * `disablePlugin` rather than `disablePluginAndSave`: the plugin stays enabled in the vault's
-   * configuration, so the next Obsidian start re-runs this check and the plugin comes back on its own
-   * once the conflicts are updated. Saving the disabled state would make the user re-enable it by hand
-   * after doing what the notice asked.
-   *
-   * @param conflicts - The conflicting plugins found installed.
-   */
-  private async refuseToRun(conflicts: readonly InstalledConflict[]): Promise<void> {
-    const fragment = createFragment((f) => {
-      f.appendText('Not running: these plugins still handle renames and deletes themselves, and two handlers would corrupt links.');
-      const listEl = f.createEl('ul');
-      for (const conflict of conflicts) {
-        listEl.createEl('li', {
-          text: `${conflict.plugin.name} ${conflict.installedVersion} — needs ${conflict.plugin.minSupportedVersion} or newer`
-        });
-      }
-      f.appendText('Update them, or disable them, and this plugin starts on its own next time Obsidian opens.');
-    });
-
-    /*
-     * Permanent, and therefore NOT `shouldHideOnClick: false`: that combination forces the separate mode,
-     * which a permanent notice cannot use. Permanent already means it stays until replaced or dismissed.
-     */
-    this.pluginNoticeComponent.showNotice(fragment, { isPermanent: true });
-
-    await this.app.plugins.disablePlugin(this.manifest.id);
   }
 }

@@ -45,7 +45,7 @@ const SCREENSHOT_AVD_NAME = 'obsidian_screenshots';
  * The Obsidian the desktop shots are photographed on, pinned deliberately.
  *
  * Nothing in these three frames depends on the Obsidian version for its CONTENT — they are this plugin's
- * settings tab, its rename notice, and its refusal notice against a stub installed by the suite itself —
+ * settings tab, its rename notice, and its blocked notice against a stub installed by the suite itself —
  * but the CHROME around them does, and an unpinned capture photographs whatever the harness happens to
  * provision. Measured 2026-09-03: two back-to-back capture runs produced byte-identical PNGs
  * for all three shots, so the suite is deterministic, while both of the committed shots 2 and 3 differed

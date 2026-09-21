@@ -22,8 +22,11 @@ import {
   vi
 } from 'vitest';
 
-import type { InstalledConflict } from './conflicting-plugins.ts';
 import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
+
+interface AppWithSetting {
+  setting: SettingLike;
+}
 
 interface ComponentModuleActual {
   Component: new () => object;
@@ -54,21 +57,23 @@ interface PluginGateProbe {
 
 interface PluginsLike {
   disablePlugin: ReturnType<typeof vi.fn>;
+  manifests: Record<string, PluginManifest>;
 }
 
 interface RenameDeleteHandlerComponentParams {
   readonly settingsBuilder: () => Partial<RenameDeleteHandlerSettings>;
 }
 
+interface SettingLike {
+  addSettingTab: ReturnType<typeof vi.fn>;
+  removeSettingTab: ReturnType<typeof vi.fn>;
+}
+
 interface SettingsTabParamsProbe {
   getPluginGateComponent: () => PluginGateComponent;
 }
 
-const {
-  mockFindInstalledConflicts,
-  renameDeleteHandlerStub
-} = vi.hoisted(() => ({
-  mockFindInstalledConflicts: vi.fn(),
+const { renameDeleteHandlerStub } = vi.hoisted(() => ({
   renameDeleteHandlerStub: vi.fn<(params: RenameDeleteHandlerComponentParams) => object>()
 }));
 
@@ -101,10 +106,6 @@ vi.mock('./plugin-settings-component.ts', async () => {
 
 vi.mock('./plugin-settings-tab.ts', () => ({
   PluginSettingsTab: vi.fn()
-}));
-
-vi.mock('./conflicting-plugins.ts', () => ({
-  findInstalledConflicts: mockFindInstalledConflicts
 }));
 
 vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
@@ -144,18 +145,12 @@ const PLUGIN_MANIFEST: PluginManifest = {
   version: '1.0.0'
 };
 
-const CONFLICT: InstalledConflict = {
-  installedVersion: '11.10.0',
-  plugin: {
-    minSupportedVersion: '12.0.0',
-    name: 'Custom Attachment Location',
-    pluginId: 'obsidian-custom-attachment-location'
-  }
-};
+const CONFLICTING_PLUGIN_ID = 'obsidian-custom-attachment-location';
+const CONFLICTING_PLUGIN_NAME = 'Custom Attachment Location';
+const CONFLICTING_PLUGIN_VERSION = '11.10.0';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFindInstalledConflicts.mockReturnValue([]);
 });
 
 function createConfiguredApp(): App {
@@ -170,6 +165,38 @@ function createConfiguredApp(): App {
   const app = appMock.asOriginalType__();
   castTo<FileManagerWithLinkUpdate>(app).fileManager.runAsyncLinkUpdate = vi.fn();
   return app;
+}
+
+/**
+ * Installs a plugin that still owns a rename/delete handler, at a version the block covers.
+ *
+ * The gate reads the MANIFEST rather than the registry — a plugin that has not loaded yet has registered
+ * nothing — so this is the whole of what it takes to make a declared conflict active, and it is the real
+ * gate that is exercised rather than a seam standing in for it.
+ *
+ * `manifests` and `setting` are seeded the same way `disablePlugin` is, and for the same reason:
+ * obsidian-test-mocks does not model either of them, and a strict proxy throws on the read until something
+ * has been assigned. `setting` is reached only on this path — the library registers a BLOCKED settings tab in place
+ * of the one this plugin never got to add.
+ *
+ * @param app - The app to install into.
+ */
+function installConflictingPlugin(app: App): void {
+  castTo<AppWithSetting>(app).setting = {
+    addSettingTab: vi.fn(),
+    removeSettingTab: vi.fn()
+  };
+  castTo<PluginsLike>(app.plugins).manifests = {
+    [CONFLICTING_PLUGIN_ID]: {
+      author: 'test',
+      description: 'test',
+      id: CONFLICTING_PLUGIN_ID,
+      minAppVersion: '1.0.0',
+      name: CONFLICTING_PLUGIN_NAME,
+      version: CONFLICTING_PLUGIN_VERSION
+    }
+  };
+  app.plugins.enabledPlugins.add(CONFLICTING_PLUGIN_ID);
 }
 
 describe('Plugin', () => {
@@ -323,21 +350,59 @@ describe('Plugin', () => {
       plugin.unload();
     });
 
-    it('should declare the Delete empty folders overlap as a warning rather than a refusal to run', async () => {
+    it('should block every plugin that still owns a rename/delete handler', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
       await plugin.onload();
 
-      const conflicts = castTo<PluginConflictsProbe>(plugin).getPluginConflicts();
+      const blocking = castTo<PluginConflictsProbe>(plugin).getPluginConflicts()
+        .filter((conflict) => conflict.severity === PluginConflictSeverity.Block);
 
-      expect(conflicts).toHaveLength(1);
-      const [conflict] = conflicts;
+      // Ranges rather than minimums, so an entry says which versions conflict rather than which do not.
+      expect(blocking.map((conflict) => [conflict.pluginId, conflict.conflictingVersionRange])).toEqual([
+        [CONFLICTING_PLUGIN_ID, '<12.0.0'],
+        ['consistent-attachments-and-links', '<4.0.0'],
+        ['better-markdown-links', '<5.0.0'],
+        ['external-rename-handler', '<4.0.0'],
+        ['frontmatter-markdown-links', '<3.0.0']
+      ]);
+      plugin.unload();
+    });
+
+    /*
+     * The requirement Custom Attachment Location's issue 79 handed over: two reporters read the notice this
+     * block replaced as a defect in THIS plugin. Every version these entries ask for has shipped, so a
+     * blocked user is waiting rather than stuck — and the reason has to read that way, name the other plugin
+     * as the one to update, and say that recovery costs nothing.
+     */
+    it('should word each block as a wait on the other plugin\'s update', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      await plugin.onload();
+
+      const blocking = castTo<PluginConflictsProbe>(plugin).getPluginConflicts()
+        .filter((conflict) => conflict.severity === PluginConflictSeverity.Block);
+
+      for (const conflict of blocking) {
+        expect(conflict.reason).toContain(`waiting for ${conflict.pluginName}`);
+        expect(conflict.reason).toContain('Update it');
+        expect(conflict.reason).toContain('no restart');
+        expect(conflict.reason).not.toContain('Not running');
+      }
+      plugin.unload();
+    });
+
+    it('should declare the Delete empty folders overlap as a warning rather than a block', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      await plugin.onload();
+
+      const warnings = castTo<PluginConflictsProbe>(plugin).getPluginConflicts()
+        .filter((conflict) => conflict.severity === PluginConflictSeverity.Warn);
+
+      expect(warnings).toHaveLength(1);
+      const [conflict] = warnings;
       expect(conflict?.pluginId).toBe('consistent-attachments-and-links');
       expect(conflict?.pluginName).toBe('Consistent Attachments and Links');
-      // A duplicated palette entry is annoying, not vault-corrupting, so both plugins keep running —
-      // Unlike the rename/delete overlap, which this plugin refuses outright.
-      expect(conflict?.severity).toBe(PluginConflictSeverity.Warn);
-      // Bounded BELOW as well: under 4.0.0 that plugin still owns a rename/delete handler, and the
-      // Refusal above already owns that message.
+      // Bounded BELOW as well: under 4.0.0 that plugin still owns a rename/delete handler, and the BLOCK
+      // Declared for the same id already owns that message.
       expect(conflict?.conflictingVersionRange).toBe('>=4.0.0 <5.0.0');
       expect(conflict?.reason).toContain('Delete empty folders');
       plugin.unload();
@@ -362,22 +427,27 @@ describe('Plugin', () => {
   });
 
   describe('with a conflicting plugin installed', () => {
-    beforeEach(() => {
-      mockFindInstalledConflicts.mockReturnValue([CONFLICT]);
-    });
-
-    it('should disable itself', async () => {
+    /*
+     * Enabled-but-inert, NOT self-disabled — the one behaviour the move to the shared gate deliberately
+     * changed. The guard this replaced called `disablePlugin` on itself, which took the plugin out of the
+     * running list until the next Obsidian start; the gate leaves it in the user's enabled list with its
+     * feature surface shut, so it resumes the moment the conflict lifts.
+     */
+    it('should stay enabled rather than disabling itself', async () => {
       const app = createConfiguredApp();
+      installConflictingPlugin(app);
       const plugin = new Plugin(app, PLUGIN_MANIFEST);
 
       await plugin.onload();
 
-      expect(castTo<PluginsLike>(app.plugins).disablePlugin).toHaveBeenCalledWith(PLUGIN_MANIFEST.id);
+      expect(castTo<PluginsLike>(app.plugins).disablePlugin).not.toHaveBeenCalled();
       plugin.unload();
     });
 
     it('should register no rename/delete handler', async () => {
-      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      const app = createConfiguredApp();
+      installConflictingPlugin(app);
+      const plugin = new Plugin(app, PLUGIN_MANIFEST);
 
       await plugin.onload();
 
@@ -386,7 +456,9 @@ describe('Plugin', () => {
     });
 
     it('should declare no API', async () => {
-      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      const app = createConfiguredApp();
+      installConflictingPlugin(app);
+      const plugin = new Plugin(app, PLUGIN_MANIFEST);
 
       await plugin.onload();
 
@@ -394,8 +466,12 @@ describe('Plugin', () => {
       plugin.unload();
     });
 
-    it('should add no settings tab', async () => {
-      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+    // Its own, that is. The library registers a BLOCKED tab in its place, carrying the reason and the two
+    // Ways out of it, so the user still finds an explanation where they look for the settings.
+    it('should add no settings tab of its own', async () => {
+      const app = createConfiguredApp();
+      installConflictingPlugin(app);
+      const plugin = new Plugin(app, PLUGIN_MANIFEST);
       const addChildSpy = vi.spyOn(plugin, 'addChild');
 
       await plugin.onload();

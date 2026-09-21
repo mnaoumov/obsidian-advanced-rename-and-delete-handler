@@ -91,4 +91,4 @@ Manual equivalent: drag `Notes/Target note.md` onto the `Archive` folder, and dr
 
 ## Where this leaves Obsidian's own behavior
 
-With `shouldHandleRenames` on, this plugin replaces Obsidian's link update rather than running beside it. That is why only one plugin in a vault may own rename handling, and why this one refuses to start when another plugin that also owns it is installed — it tells you which one, and starts on its own once you have updated it.
+With `shouldHandleRenames` on, this plugin replaces Obsidian's link update rather than running beside it. That is why only one plugin in a vault may own rename handling, and why this one does nothing at all while another plugin that also owns it is enabled at a version that still handles renames itself. It stays enabled and tells you in its settings tab which plugin it is waiting for; update that one and this plugin resumes on its own, with no restart.
