@@ -764,6 +764,32 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
     });
   }
 
+  /**
+   * Suppresses Obsidian's own link update for the renames this handler has already rewritten, by emptying the
+   * `linkUpdates` array that the native {@link FileManager.runAsyncLinkUpdate} collected.
+   *
+   * What that suppression does and does not save, read out of the Obsidian bundle - the shape is unchanged from
+   * 1.12.7 through 1.13.7, and `obsidian-typings` declares none of it:
+   *
+   * - `runAsyncLinkUpdate` waits for a clean metadata cache and then walks EVERY reference in the vault
+   *   (`metadataCache.iterateAllRefs`, one `getLinkpathDest` per reference) to build `linkUpdates` - before it
+   *   calls this handler. That walk is unconditional and is already paid by the time this method is entered, so
+   *   nothing decided below can avoid it.
+   * - `updateAllLinks(linkUpdates)`, which runs after this handler and is the only thing emptying the array
+   *   skips, is linear in `linkUpdates.length`: one per-entry change computation, then a write for only the
+   *   files whose link text actually changes, and an immediate return when none does.
+   *
+   * So a per-entry rollback below costs one change computation and at most one file write for the entry it
+   * keeps, not a second vault scan. The three whole-call bail-outs pay that same per-entry cost across the
+   * whole array, and the `!isRenameCalled` one writes nothing at all, because a reference whose target did not
+   * move computes no change.
+   *
+   * Every exclusion below is therefore kept for the correctness reason its own comment gives, and none of them
+   * is worth narrowing for speed.
+   *
+   * @param linkUpdates - The link updates Obsidian collected before invoking the handler.
+   * @param linkUpdatesHandler - The original handler passed to {@link FileManager.runAsyncLinkUpdate}.
+   */
   private async wrapLinkUpdatesHandler(linkUpdates: LinkUpdate[], linkUpdatesHandler: LinkUpdatesHandler): Promise<void> {
     let isRenameCalled = false;
     let isForeignLockedRenameCalled = false;
