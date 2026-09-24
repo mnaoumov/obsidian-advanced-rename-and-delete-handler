@@ -124,6 +124,8 @@ vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { FirstLoadNoticeComponent } from './first-load-notice-component.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { PluginApiImpl } from './plugin-api-impl.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { PLUGIN_API_VERSION } from './plugin-api.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { PluginDependentsComponent } from './plugin-dependents-component.ts';
@@ -213,15 +215,25 @@ describe('Plugin', () => {
       plugin.unload();
     });
 
-    it('should expose its API once it has loaded', async () => {
+    it('should declare no API until it has loaded', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
 
       // Nothing to call before the plugin has loaded — and nothing published either.
-      expect(plugin.api).toBeNull();
+      expect(castTo<PluginApisProbe>(plugin).getPluginApis()).toEqual([]);
 
       await plugin.onload();
 
-      expect(plugin.api).not.toBeNull();
+      expect(castTo<PluginApisProbe>(plugin).getPluginApis()).toHaveLength(1);
+      plugin.unload();
+    });
+
+    // The registry is the only route: an instance member would hand a consumer whatever version is installed,
+    // With no negotiation, no contract check and no revocation.
+    it('should not expose its API on the plugin instance', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      await plugin.onload();
+
+      expect('api' in plugin).toBe(false);
       plugin.unload();
     });
 
@@ -234,7 +246,7 @@ describe('Plugin', () => {
       const declarations = castTo<PluginApisProbe>(plugin).getPluginApis();
 
       expect(declarations).toHaveLength(1);
-      expect(declarations[0]?.api).toBe(plugin.api);
+      expect(declarations[0]?.api).toBeInstanceOf(PluginApiImpl);
       expect(declarations[0]?.apiVersion).toBe(PLUGIN_API_VERSION);
       plugin.unload();
     });

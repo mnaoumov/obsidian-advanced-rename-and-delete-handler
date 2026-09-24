@@ -49,11 +49,15 @@ A copy of the vault ships with every release. You can access it via any of the f
 - **A drawing stored as `.excalidraw.md` is treated as an attachment, not a note**, along with any other ending you add. [04 What counts as a note](<./demo-vault/04 What counts as a note.md>)
 - **The plugin can be confined to part of the vault** with include and exclude path lists. [05 Limiting the scope](<./demo-vault/05 Limiting the scope.md>)
 
-## For plugin developers: handing your settings over
+## For plugin developers
 
-A plugin that used to handle renames and deletions itself, and no longer does, can propose the settings it held so a vault keeps behaving the way it did, and can go on reading those settings back afterwards. This plugin owns those settings, so it owns the dialog too: your proposal is shown next to the current values, and the user approves, edits or declines it row by row. Nothing is written unless they press OK.
+This plugin publishes an API for the plugins that used to handle renames and deletions themselves and no longer do: they propose the settings they held so a vault keeps behaving the way it did, and go on reading those settings back afterwards. Its types are in [`api.d.ts`](./api.d.ts) at the root of this repository — it imports nothing at all, so copy it into your plugin as it is.
 
-The API is published through the `obsidian-dev-utils` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first.
+This plugin owns those settings, so it owns the dialog too: your proposal is shown next to the current values, and the user approves, edits or declines it row by row. Nothing is written unless they press OK.
+
+The API is published through the `obsidian-dev-utils` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first. The contract version is `1.1.0` and moves independently of the plugin's own version; ask for `'^1'`.
+
+If your plugin already uses [`obsidian-dev-utils`](https://mnaoumov.dev/obsidian-dev-utils/guides/cross-plugin-apis/), `watchPluginApi` is the whole of it:
 
 ```ts
 import { watchPluginApi } from 'obsidian-dev-utils/obsidian/plugin/plugin-api';
@@ -83,9 +87,9 @@ if (result.isApplied) {
 - **`result.isApplied`** is `false` when the user cancelled and nothing was written — do NOT record your migration as done in that case. It is `true` when they approved, and also when the proposal changed nothing and no dialog was needed.
 - **The call resolves only once the dialog is closed**, so awaiting it is how you learn the answer. Two plugins proposing at once are queued, never stacked.
 - **A value of the wrong type is refused** rather than written, so a mistake surfaces as an error instead of a corrupted `data.json`.
-- The settings you may propose are `emptyFolderBehavior`, `excludePaths`, `includePaths`, `notePriorities`, `shouldDeleteConflictingAttachments`, `shouldHandleDeletions`, `shouldHandleRenames`, `shouldRenameAttachmentFiles`, `shouldRenameAttachmentFolder`, `shouldRescueSharedAttachments`, `shouldUpdateFileNameAliases` and `treatAsAttachmentExtensions`.
-- The contract version is `1.1.0` and moves independently of the plugin's own version. Ask for `'^1'`.
-- If you cannot depend on a library version that has the registry, the same object is on the plugin instance as `app.plugins.plugins['advanced-rename-and-delete-handler']?.api` — untyped, and `null` until this plugin has loaded.
+- The settings you may propose are the members of `HandedOverSettings` in [`api.d.ts`](./api.d.ts), each documented there.
+
+If your plugin does not use `obsidian-dev-utils` — and is not going to — you still need no dependency on anything. The registry, and the two events a plugin announces itself through, are a documented wire protocol reachable with the `obsidian` module alone; [Plugin API protocol](https://mnaoumov.dev/obsidian-dev-utils/guides/plugin-api-protocol/) is that route written out, and `api.d.ts` types it just as well, since nothing in that file imports the library either. Look the API up each time you use it rather than keeping it in a field: the raw object does not know when this plugin has unloaded.
 
 ### Reading the settings back
 
@@ -109,7 +113,7 @@ if (api && !api.isPathIgnored(file.path) && !api.isTreatedAsAttachment(file.path
 }
 ```
 
-- **`getSettings()`** returns all twelve values above as plain data, read live on every call, so there is nothing to invalidate and nothing to subscribe to. The arrays are copies — writing to one changes nothing here.
+- **`getSettings()`** returns every setting you may propose, as plain data, read live on every call, so there is nothing to invalidate and nothing to subscribe to. The arrays are copies — writing to one changes nothing here.
 - **`isPathIgnored(path)`** answers whether this plugin leaves the path alone, per the include and exclude lists.
 - **`isTreatedAsAttachment(path)`** answers whether the path names an attachment despite its extension — `.excalidraw.md` being the case that motivated the setting.
 - **Use the two predicates rather than re-matching the arrays yourself.** Every plugin bundles its own copy of `obsidian-dev-utils`, so running the lists through your copy of the matching code is two copies that can drift apart; asking here keeps the matching in one place.

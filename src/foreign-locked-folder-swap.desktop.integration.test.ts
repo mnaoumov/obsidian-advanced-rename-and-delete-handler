@@ -90,13 +90,34 @@ interface MigrationApiLike {
   migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
+interface ObsidianDevUtilsStateLike {
+  readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
+}
+
 interface PhaseResult {
   readonly finalPaths: readonly string[];
   readonly steps: readonly RenameStep[];
 }
 
-interface PluginWithApiLike {
+/**
+ * The slice of the `obsidian-dev-utils` cross-plugin registry a closure reads the API from: the wire-level path
+ * that library's Plugin API protocol guide freezes, so a suite reaches the plugin the way a consumer does.
+ */
+interface PluginApiRegistryHostLike {
+  readonly __obsidianDevUtils?: ObsidianDevUtilsStateLike;
+}
+
+interface PluginApiRegistryLike {
+  readonly records?: Partial<Record<string, readonly PublishedPluginApiRecordLike[]>>;
+}
+
+interface PluginApiRegistryWrapperLike {
+  readonly value?: PluginApiRegistryLike;
+}
+
+interface PublishedPluginApiRecordLike {
   readonly api: MigrationApiLike;
+  readonly isRevoked: boolean;
 }
 
 interface RenameStep {
@@ -159,20 +180,13 @@ describe('A folder swap owned by another plugin', () => {
          */
         const WAIT_TIMEOUT_IN_MILLISECONDS = 5000;
 
-        const plugin = app.plugins.plugins[pluginId];
-        if (!plugin) {
-          throw new Error(`${pluginId} is not loaded`);
+        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+          ?.find((candidate) => !candidate.isRevoked);
+        if (!apiRecord) {
+          throw new Error(`${pluginId} has published no API`);
         }
 
-        function hasApi(candidate: object): candidate is PluginWithApiLike {
-          return 'api' in candidate;
-        }
-
-        if (!hasApi(plugin)) {
-          throw new Error(`${pluginId} exposes no API`);
-        }
-
-        const api = plugin.api;
+        const api = apiRecord.api;
         let steps: RenameStep[] = [];
 
         /**
