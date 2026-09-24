@@ -796,6 +796,13 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * re-points the entries whose `resolvedFile` is the note it has just trashed. Collected that late, a link to
    * a renamed or trashed file no longer resolves, its entry is never made, and the link is left dangling.
    *
+   * Narrowing the walk to the renamed subtree instead (reimplementing `runAsyncLinkUpdate`) was measured and
+   * refused (2026-09-24, Obsidian 1.14.2): the walk costs ~115 ms at 100k references and ~320 ms at 250k, and
+   * runs ONCE per `renameFile`, folder renames included - ~30% of a single note rename with this handler off,
+   * 2% of a 20-file folder rename with it on, 0.03% of a 1000-file one. What does scale is this handler's own
+   * `getBacklinksForFileOrPath` / `getBacklinksForFileSafe` per renamed file: Obsidian's `getBacklinksForFile`
+   * is the same full `iterateAllRefs` walk, taken twice per file, so a folder rename walks the vault 2F+1 times.
+   *
    * @param linkUpdates - The link updates Obsidian collected before invoking the handler.
    * @param linkUpdatesHandler - The original handler passed to {@link FileManager.runAsyncLinkUpdate}.
    */
