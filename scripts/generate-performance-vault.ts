@@ -34,13 +34,60 @@ const DEFAULT_PERFORMANCE_VAULT_NOTE_COUNT = 200;
 export const PERFORMANCE_VAULT_NOTE_COUNT = Number(process.env['RENAME_DELETE_PERF_VAULT_NOTE_COUNT']) || DEFAULT_PERFORMANCE_VAULT_NOTE_COUNT;
 
 /**
- * Plugin data seeded before Obsidian opens so the delete handler runs its expensive path.
- * `shouldHandleDeletions` is the only key needed: it is what `DeleteHandler.handle()`
- * gates the attachment-folder resolution on, and this plugin has no backup warning that
- * would revert it on load.
+ * Root of the notes the `rename-walk` suite renames a folder of. Kept apart from the two bulk-delete folders,
+ * which that suite counts by folder.
+ */
+export const RENAME_WALK_ROOT_FOLDER = 'rename-walk';
+
+/**
+ * The folder the `rename-walk` suite renames, one note per entry of {@link RENAME_WALK_MOVED_NOTE_COUNT}.
+ */
+export const RENAME_WALK_MOVED_FOLDER = `${RENAME_WALK_ROOT_FOLDER}/moved`;
+
+/**
+ * The notes that link to every moved note by its full path, so each of their links goes stale when the folder
+ * moves and only the handler's own backlink capture can bring it back.
+ */
+export const RENAME_WALK_HOLDERS_FOLDER = `${RENAME_WALK_ROOT_FOLDER}/holders`;
+
+/**
+ * How many notes the renamed folder holds: F in "a folder rename of F files". Large enough that walks
+ * proportional to it (2F + 1 before the fix) cannot pass for a constant.
+ */
+export const RENAME_WALK_MOVED_NOTE_COUNT = 40;
+
+/**
+ * How many holder notes link to the moved notes.
+ */
+export const RENAME_WALK_HOLDER_COUNT = 5;
+
+/**
+ * How many unrelated notes, {@link RENAME_WALK_BACKGROUND_LINKS_PER_NOTE} links each, surround the renamed folder, so a whole-vault walk costs something
+ * and the vault is not trivially small.
+ */
+const RENAME_WALK_BACKGROUND_NOTE_COUNT = 1000;
+
+/**
+ * How many links each background note holds.
+ */
+const RENAME_WALK_BACKGROUND_LINKS_PER_NOTE = 5;
+
+/**
+ * How far apart a background note's links land, so they cross the vault rather than forming short chains.
+ */
+const RENAME_WALK_BACKGROUND_LINK_STRIDE = 97;
+
+/**
+ * Plugin data seeded before Obsidian opens.
+ *
+ * `shouldHandleDeletions` is what `DeleteHandler.handle()` gates the attachment-folder resolution on, which is
+ * the bulk-delete suite's expensive path. `shouldHandleRenames` is what makes the handler capture and rewrite
+ * backlinks on a rename, which is what the `rename-walk` suite counts; the bulk-delete suite renames nothing, so
+ * it is unaffected. This plugin has no backup warning that would revert either on load.
  */
 const SEEDED_PLUGIN_DATA = {
-  shouldHandleDeletions: true
+  shouldHandleDeletions: true,
+  shouldHandleRenames: true
 };
 
 /**
@@ -60,6 +107,24 @@ export function generatePerformanceVault(): PopulateFilesParams {
     for (let noteIndex = 0; noteIndex < PERFORMANCE_VAULT_NOTE_COUNT; noteIndex++) {
       files[`${folder}/note-${String(noteIndex)}.md`] = `# Note ${String(noteIndex)}\n`;
     }
+  }
+
+  for (let noteIndex = 0; noteIndex < RENAME_WALK_BACKGROUND_NOTE_COUNT; noteIndex++) {
+    const links = Array.from({ length: RENAME_WALK_BACKGROUND_LINKS_PER_NOTE }, (_, linkIndex) => {
+      const targetIndex = (noteIndex + 1 + linkIndex * RENAME_WALK_BACKGROUND_LINK_STRIDE) % RENAME_WALK_BACKGROUND_NOTE_COUNT;
+      return `[[background-${String(targetIndex)}]]`;
+    }).join(' ');
+    files[`${RENAME_WALK_ROOT_FOLDER}/background/background-${String(noteIndex)}.md`] = `${links}\n`;
+  }
+
+  const holderLinks: string[] = [];
+  for (let noteIndex = 0; noteIndex < RENAME_WALK_MOVED_NOTE_COUNT; noteIndex++) {
+    files[`${RENAME_WALK_MOVED_FOLDER}/moved-${String(noteIndex)}.md`] = `[[background-${String(noteIndex)}]]\n`;
+    holderLinks.push(`[[${RENAME_WALK_MOVED_FOLDER}/moved-${String(noteIndex)}]]`);
+  }
+
+  for (let holderIndex = 0; holderIndex < RENAME_WALK_HOLDER_COUNT; holderIndex++) {
+    files[`${RENAME_WALK_HOLDERS_FOLDER}/holder-${String(holderIndex)}.md`] = `${holderLinks.join('\n')}\n`;
   }
 
   return files;
