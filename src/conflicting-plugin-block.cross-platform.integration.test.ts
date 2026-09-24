@@ -127,7 +127,7 @@ describe('A plugin that still owns its own rename/delete handler', () => {
             isConflictEnabled: app.plugins.enabledPlugins.has(conflictingPluginId),
             isConflictRegistered,
             // Blocked is enabled-but-inert: it is still LOADED, unlike the self-disabling guard this
-            // Replaced, so there is nothing for the user to switch back on.
+            // replaced, so there is nothing for the user to switch back on.
             isLoadedAfter: Object.hasOwn(app.plugins.plugins, pluginId),
             isStillEnabledInConfig: app.plugins.enabledPlugins.has(pluginId),
             // Standing aside must not uninstall anything — the user updates the conflict and it returns.

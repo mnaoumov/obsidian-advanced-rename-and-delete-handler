@@ -361,7 +361,7 @@ async function shoot(index: number, caption: string): Promise<void> {
   });
 
   // Captioned AFTER capture, so the frame stays an untouched device screenshot and rewording a label
-  // Needs no re-shoot.
+  // needs no re-shoot.
   const labeled = await labelScreenshot(captured, { text: caption });
 
   mkdirSync(IMAGES_DIRECTORY, { recursive: true });

@@ -183,7 +183,7 @@ export class Plugin extends PluginBase {
     );
 
     // Subscribed here, before `getPluginApis()` publishes the API a dependent's gate waits for — so no
-    // Dependent can finish loading, and announce it, before this is listening.
+    // dependent can finish loading, and announce it, before this is listening.
     const pluginDependentsComponent = this.addChild(
       new PluginDependentsComponent({
         app: this.app,

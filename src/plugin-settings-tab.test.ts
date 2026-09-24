@@ -75,7 +75,7 @@ interface SettingLike {
 }
 
 // The overlap banner's two inputs: what the library writes into the row, and whether a warning conflict
-// Holds at all, which is what decides whether the row exists.
+// holds at all, which is what decides whether the row exists.
 const renderConflictWarningBannerMock = vi.fn<(containerEl: HTMLElement) => void>();
 const hasActiveWarningConflictsMock = vi.fn<() => boolean>();
 
@@ -85,7 +85,7 @@ let pluginDependentsComponent: PluginDependentsComponent;
 beforeEach(() => {
   vi.clearAllMocks();
   // `clearAllMocks` drops the recorded calls but keeps any implementation set by an earlier test, and
-  // Whether this one writes into the container is exactly what the overlap row's tests differ on.
+  // whether this one writes into the container is exactly what the overlap row's tests differ on.
   renderConflictWarningBannerMock.mockReset();
   hasActiveWarningConflictsMock.mockReset();
   app = App.createConfigured__().asOriginalType__();
@@ -110,8 +110,8 @@ describe('PluginSettingsTab', () => {
   });
 
   // The overlap banner is the one deliberate exception, and it has to be: Obsidian never calls `display()`
-  // Once the declarative definitions are non-empty, so a banner can only reach the tab as a row, and a row
-  // Inside a group would read as a setting of that group.
+  // once the declarative definitions are non-empty, so a banner can only reach the tab as a row, and a row
+  // inside a group would read as a setting of that group.
   it('should put every row inside a group, leaving none loose at the top level but the overlap banner', () => {
     const [banner, ...rest] = createTab().getSettingDefinitions();
 
@@ -170,7 +170,7 @@ describe('PluginSettingsTab', () => {
   });
 
   // The banner is excluded rather than renamed: a name is what a row shows beside its control, and a bare
-  // Host with no control has nothing to put one against.
+  // host with no control has nothing to put one against.
   it('should give every setting row a name', () => {
     for (const name of settingRowNames(createTab())) {
       expect(name).not.toBe('');
@@ -215,7 +215,7 @@ describe('PluginSettingsTab', () => {
     });
 
     // The library renders nothing when no overlap holds, and an empty row is still a row — a divider and a
-    // Block of padding with nothing in it.
+    // block of padding with nothing in it.
     it('should hide itself when no warning conflict holds', () => {
       hasActiveWarningConflictsMock.mockReturnValue(false);
 
@@ -229,7 +229,7 @@ describe('PluginSettingsTab', () => {
     });
 
     // A function, not a value: the gate re-evaluates as plugins are enabled and disabled while the tab is open,
-    // And the tab re-reads a function form on every render.
+    // and the tab re-reads a function form on every render.
     it('should re-read the gate on every evaluation', () => {
       const tab = createTab();
       hasActiveWarningConflictsMock.mockReturnValue(false);
