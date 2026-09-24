@@ -72,7 +72,7 @@ describe('A plugin that declares this one as a dependency', () => {
           }
 
           // Matched by text on a leaf element rather than by class: what is asserted is that the heading is on
-          // Screen, whichever element Obsidian's group renderer puts it in.
+          // screen, whichever element Obsidian's group renderer puts it in.
           return [...containerEl.querySelectorAll<HTMLElement>('*')]
             .some((el) => el.childElementCount === 0 && el.textContent === dependentsHeading && el.isShown());
         }

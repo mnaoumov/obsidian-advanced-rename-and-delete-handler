@@ -99,7 +99,7 @@ describe('PluginSettingsComponent', () => {
     });
 
     // A later reload answers a different question — an external edit to `data.json` — and must not rewrite
-    // What the first load found.
+    // what the first load found.
     it('should keep what the first load found across a later reload', async () => {
       const loadData = vi.fn<() => Promise<unknown>>().mockResolvedValue(null);
       const component = await loadComponentWith(loadData);

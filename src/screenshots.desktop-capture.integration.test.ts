@@ -325,7 +325,7 @@ async function installConflictAndReload(): Promise<BlockedProbe> {
       const SETTLE_DELAY_IN_MILLISECONDS = 1500;
 
       // Let the previous shot's capture settle: the device-metrics override it sets and clears disturbs
-      // Anything opened too soon afterwards.
+      // anything opened too soon afterwards.
       await sleep(RESIZE_SETTLE_DELAY_IN_MILLISECONDS);
 
       const pluginFolder = `${app.vault.configDir}/plugins/${conflictingPluginId}`;

@@ -61,10 +61,10 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
   protected override getSettingDefinitionItems(): SettingDefinitionItem[] {
     return [
       // The overlap banner has to travel as a ROW: Obsidian renders the declarative definitions and never
-      // Calls `display()` once `getSettingDefinitions()` is non-empty, so there is no container to write
-      // Into otherwise. The row body is emptied first, leaving the Setting element as a bare host for the
-      // Banner. The row exists only while a warning conflict holds, since the library renders nothing
-      // Otherwise and an empty row is still a divider and a block of padding.
+      // calls `display()` once `getSettingDefinitions()` is non-empty, so there is no container to write
+      // into otherwise. The row body is emptied first, leaving the Setting element as a bare host for the
+      // banner. The row exists only while a warning conflict holds, since the library renders nothing
+      // otherwise and an empty row is still a divider and a block of padding.
       this.settingEx({
         name: '',
         render: (setting) => {
@@ -94,7 +94,7 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
           })
         ],
         // A predicate rather than a fixed value: this builder runs when the tab is registered, before any
-        // Dependent has loaded, while the predicate is evaluated each time the tab is shown.
+        // dependent has loaded, while the predicate is evaluated each time the tab is shown.
         visible: () => this.pluginDependentsComponent.getDependents().length > 0
       }),
       this.settingGroupEx({

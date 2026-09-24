@@ -73,7 +73,7 @@ describe('Renaming a note', () => {
         ]);
 
         // Polled rather than awaited, so a stale link is reported as a failed expectation with both
-        // Texts attached rather than as an opaque timeout.
+        // texts attached rather than as an opaque timeout.
         const deadline = Date.now() + REWRITE_DEADLINE_IN_MILLISECONDS;
         while (Date.now() < deadline) {
           if ((await app.vault.read(source)) !== before) {

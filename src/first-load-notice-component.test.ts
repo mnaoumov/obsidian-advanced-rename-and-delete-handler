@@ -56,7 +56,7 @@ describe('FirstLoadNoticeComponent', () => {
     });
 
     // A user upgrading from a version whose defaults handled renames, who never changed a setting, is the
-    // Reason the notice exists — so it has to speak to them, not only to a fresh install.
+    // reason the notice exists — so it has to speak to them, not only to a fresh install.
     it('should tell an upgrading user that rename handling used to be on', async () => {
       await loadComponent(true);
 

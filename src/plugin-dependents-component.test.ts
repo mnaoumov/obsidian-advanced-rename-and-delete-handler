@@ -58,7 +58,7 @@ describe('PluginDependentsComponent', () => {
   });
 
   // A dependent whose gate closed because this plugin went away announces itself again once it is back, and
-  // Must be listed once, not twice.
+  // must be listed once, not twice.
   it('should list a dependent that announces itself twice only once', () => {
     app.workspace.trigger(PLUGIN_LOADED_EVENT_NAME, createPayload('dependent', [PLUGIN_ID]));
     app.workspace.trigger(PLUGIN_LOADED_EVENT_NAME, createPayload('dependent', [PLUGIN_ID]));

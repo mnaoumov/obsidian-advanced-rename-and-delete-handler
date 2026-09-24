@@ -46,7 +46,7 @@ interface PluginApisProbe {
 }
 
 // `getPluginConflicts` is protected on the base — the declaration is for the library, not for callers —
-// So a test reads it through a probe rather than widening the plugin's own surface.
+// so a test reads it through a probe rather than widening the plugin's own surface.
 interface PluginConflictsProbe {
   getPluginConflicts: () => PluginConflict[];
 }
@@ -78,7 +78,7 @@ const { renameDeleteHandlerStub } = vi.hoisted(() => ({
 }));
 
 // Stub the plugin's OWN sibling modules. The settings stub extends the real test-mocks `Component` so the
-// Real `PluginBase` lifecycle can load it as a child without the heavy settings-base dependencies.
+// real `PluginBase` lifecycle can load it as a child without the heavy settings-base dependencies.
 vi.mock('./plugin-settings-component.ts', async () => {
   const { Component } = await vi.importActual<ComponentModuleActual>('obsidian');
   const { PluginSettings } = await vi.importActual<typeof import('./plugin-settings.ts')>('./plugin-settings.ts');
@@ -161,8 +161,8 @@ function createConfiguredApp(): App {
     callback();
   });
   // `disablePlugin` is the one member of the registry obsidian-test-mocks does not model - it covers the
-  // Honest core and leaves the enable/disable lifecycle to throw - so it is seeded on the real registry
-  // Rather than replacing it. `getPlugin` needs nothing: the mock already answers `null`.
+  // honest core and leaves the enable/disable lifecycle to throw - so it is seeded on the real registry
+  // rather than replacing it. `getPlugin` needs nothing: the mock already answers `null`.
   castTo<PluginsLike>(appMock.plugins).disablePlugin = vi.fn().mockResolvedValue(undefined);
   const app = appMock.asOriginalType__();
   castTo<FileManagerWithLinkUpdate>(app).fileManager.runAsyncLinkUpdate = vi.fn();
@@ -228,7 +228,7 @@ describe('Plugin', () => {
     });
 
     // The registry is the only route: an instance member would hand a consumer whatever version is installed,
-    // With no negotiation, no contract check and no revocation.
+    // with no negotiation, no contract check and no revocation.
     it('should not expose its API on the plugin instance', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
       await plugin.onload();
@@ -238,7 +238,7 @@ describe('Plugin', () => {
     });
 
     // Declared rather than published by hand, so the base revokes it with the feature surface and names its
-    // Contract version in the `plugin-loaded` broadcast a dependent's gate listens for.
+    // contract version in the `plugin-loaded` broadcast a dependent's gate listens for.
     it('should declare its API for the base to publish', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
       await plugin.onload();
@@ -414,15 +414,15 @@ describe('Plugin', () => {
       expect(conflict?.pluginId).toBe('consistent-attachments-and-links');
       expect(conflict?.pluginName).toBe('Consistent Attachments and Links');
       // Bounded BELOW as well: under 4.0.0 that plugin still owns a rename/delete handler, and the BLOCK
-      // Declared for the same id already owns that message.
+      // declared for the same id already owns that message.
       expect(conflict?.conflictingVersionRange).toBe('>=4.0.0 <5.0.0');
       expect(conflict?.reason).toContain('Delete empty folders');
       plugin.unload();
     });
 
     // The settings tab takes an ACCESSOR rather than the gate itself: the gate is what loads the feature
-    // Surface, so at the moment `onloadImpl` builds the tab the base has not assigned it yet, and reading
-    // It eagerly throws.
+    // surface, so at the moment `onloadImpl` builds the tab the base has not assigned it yet, and reading
+    // it eagerly throws.
     it('should hand the settings tab a lazy route to the plugin gate', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
       await plugin.onload();
@@ -479,7 +479,7 @@ describe('Plugin', () => {
     });
 
     // Its own, that is. The library registers a BLOCKED tab in its place, carrying the reason and the two
-    // Ways out of it, so the user still finds an explanation where they look for the settings.
+    // ways out of it, so the user still finds an explanation where they look for the settings.
     it('should add no settings tab of its own', async () => {
       const app = createConfiguredApp();
       installConflictingPlugin(app);
