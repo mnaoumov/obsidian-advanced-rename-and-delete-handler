@@ -754,12 +754,12 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
   private readonly app: App;
   private readonly fileManager: FileManager;
   private isForcingAlwaysUpdateLinks = false;
+  private readonly settingsManager: SettingsManager;
   /**
    * The canvas link updates {@link wrapLinkUpdatesHandler} took out of a `linkUpdates` array, keyed by that array,
    * for the patched `updateAllLinks` to apply without Obsidian's *Update links* prompt.
    */
-  private readonly promptlessLinkUpdatesMap = new WeakMap<LinkUpdate[], LinkUpdate[]>();
-  private readonly settingsManager: SettingsManager;
+  private readonly unpromptedLinkUpdatesMap = new WeakMap<LinkUpdate[], LinkUpdate[]>();
 
   public constructor(params: FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams) {
     super();
@@ -789,13 +789,13 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
         originalMethodBound
       }) => {
         await originalMethodBound(linkUpdates);
-        const promptlessLinkUpdates = this.promptlessLinkUpdatesMap.get(linkUpdates);
-        if (!promptlessLinkUpdates) {
+        const unpromptedLinkUpdates = this.unpromptedLinkUpdatesMap.get(linkUpdates);
+        if (!unpromptedLinkUpdates) {
           return;
         }
 
-        this.promptlessLinkUpdatesMap.delete(linkUpdates);
-        await this.updateAllLinksWithoutPrompt(promptlessLinkUpdates, originalMethodBound);
+        this.unpromptedLinkUpdatesMap.delete(linkUpdates);
+        await this.updateAllLinksWithoutPrompt(unpromptedLinkUpdates, originalMethodBound);
       }
     });
 
@@ -919,7 +919,7 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
      * A `runAsyncLinkUpdate` started while another is in progress hands its handler the SAME array, so a second
      * wrapper can reach an array the first one already recorded. Append to that record rather than replace it.
      */
-    const promptlessLinkUpdates = this.promptlessLinkUpdatesMap.get(linkUpdates) ?? [];
+    const unpromptedLinkUpdates = this.unpromptedLinkUpdatesMap.get(linkUpdates) ?? [];
 
     filterInPlace(
       linkUpdates,
@@ -948,15 +948,15 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
 
         if (linkUpdate.sourceFile.extension === CANVAS_FILE_EXTENSION || linkUpdate.resolvedFile.extension === CANVAS_FILE_EXTENSION) {
           // Still Obsidian's to apply, but without its prompt: see `updateAllLinksWithoutPrompt`.
-          promptlessLinkUpdates.push(linkUpdate);
+          unpromptedLinkUpdates.push(linkUpdate);
         }
 
         return false;
       }
     );
 
-    if (promptlessLinkUpdates.length > 0) {
-      this.promptlessLinkUpdatesMap.set(linkUpdates, promptlessLinkUpdates);
+    if (unpromptedLinkUpdates.length > 0) {
+      this.unpromptedLinkUpdatesMap.set(linkUpdates, unpromptedLinkUpdates);
     }
   }
 }
