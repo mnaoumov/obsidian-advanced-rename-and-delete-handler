@@ -14,6 +14,7 @@ import { isDeepEqual } from 'obsidian-dev-utils/object-utils';
 import { assertNever } from 'obsidian-dev-utils/type-guards';
 
 import type {
+  EmptyFolderBehavior as ApiEmptyFolderBehavior,
   HandedOverSettings,
   MigratableSettings
 } from './plugin-api.ts';
@@ -88,7 +89,7 @@ export type MigratableSettingPropertyName = keyof HandedOverSettings;
 /**
  * A value any migratable setting may hold.
  */
-export type MigratableSettingValue = boolean | EmptyFolderBehavior | readonly string[];
+export type MigratableSettingValue = ApiEmptyFolderBehavior | boolean | readonly string[];
 
 /**
  * One line of the comparison dialog: what this plugin holds now, against what the consumer proposes.
@@ -177,11 +178,19 @@ export const MIGRATABLE_SETTING_DESCRIPTORS: readonly MigratableSettingDescripto
   }
 ];
 
-const EMPTY_FOLDER_BEHAVIOR_BY_NAME = new Map<string, EmptyFolderBehavior>([
-  [EmptyFolderBehavior.Delete, EmptyFolderBehavior.Delete],
-  [EmptyFolderBehavior.DeleteWithEmptyParents, EmptyFolderBehavior.DeleteWithEmptyParents],
-  [EmptyFolderBehavior.Keep, EmptyFolderBehavior.Keep]
-]);
+/**
+ * The library enum each published spelling in `api.d.ts` stands for.
+ *
+ * Keyed by the published union rather than by the enum, and that is the compile-time tether between the two:
+ * `api.d.ts` is a declaration file under `skipLibCheck`, so nothing checks its inlined union from the inside. A
+ * spelling the union gains is a missing key here, and one the enum loses or renames is a member that no longer
+ * exists; one the enum GAINS fails in `PluginApiImpl.getSettings`, where the enum is handed out as the union.
+ */
+const EMPTY_FOLDER_BEHAVIOR_BY_API_NAME: Record<ApiEmptyFolderBehavior, EmptyFolderBehavior> = {
+  [EmptyFolderBehavior.Delete]: EmptyFolderBehavior.Delete,
+  [EmptyFolderBehavior.DeleteWithEmptyParents]: EmptyFolderBehavior.DeleteWithEmptyParents,
+  [EmptyFolderBehavior.Keep]: EmptyFolderBehavior.Keep
+};
 
 interface WriteMigratableSettingParams {
   readonly propertyName: MigratableSettingPropertyName;
@@ -272,7 +281,7 @@ export function formatMigratableSettingValue(value: MigratableSettingValue): str
   }
 
   if (typeof value === 'string') {
-    return getEmptyFolderBehaviorLabel(value);
+    return getEmptyFolderBehaviorLabel(EMPTY_FOLDER_BEHAVIOR_BY_API_NAME[value]);
   }
 
   return value.length === 0 ? '(empty)' : value.join(', ');
@@ -343,7 +352,7 @@ export function readMigratableSetting(settings: ReadonlyPluginSettings<PluginSet
  * @returns The member, or `null` when the string names none.
  */
 export function toEmptyFolderBehaviorOrNull(value: string): EmptyFolderBehavior | null {
-  return EMPTY_FOLDER_BEHAVIOR_BY_NAME.get(value) ?? null;
+  return getEmptyFolderBehaviorByName(value) ?? null;
 }
 
 function checkBoolean(propertyName: MigratableSettingPropertyName, settingValue: MigratableSettingValue): boolean {
@@ -355,7 +364,7 @@ function checkBoolean(propertyName: MigratableSettingPropertyName, settingValue:
 }
 
 function ensureEmptyFolderBehavior(propertyName: MigratableSettingPropertyName, settingValue: MigratableSettingValue): EmptyFolderBehavior {
-  const emptyFolderBehavior = typeof settingValue === 'string' ? EMPTY_FOLDER_BEHAVIOR_BY_NAME.get(settingValue) : undefined;
+  const emptyFolderBehavior = typeof settingValue === 'string' ? getEmptyFolderBehaviorByName(settingValue) : undefined;
   if (emptyFolderBehavior === undefined) {
     throw new TypeError(`Setting "${propertyName}" expects an empty folder behavior, got ${JSON.stringify(settingValue)}`);
   }
@@ -369,6 +378,14 @@ function ensureStringList(propertyName: MigratableSettingPropertyName, settingVa
   }
 
   return [...settingValue];
+}
+
+function getEmptyFolderBehaviorByName(name: string): EmptyFolderBehavior | undefined {
+  return isApiEmptyFolderBehavior(name) ? EMPTY_FOLDER_BEHAVIOR_BY_API_NAME[name] : undefined;
+}
+
+function isApiEmptyFolderBehavior(name: string): name is ApiEmptyFolderBehavior {
+  return Object.hasOwn(EMPTY_FOLDER_BEHAVIOR_BY_API_NAME, name);
 }
 
 function writeMigratableSetting(params: WriteMigratableSettingParams): void {
