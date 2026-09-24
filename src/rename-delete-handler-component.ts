@@ -745,6 +745,12 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
 class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent {
   private readonly app: App;
   private readonly fileManager: FileManager;
+  private isForcingAlwaysUpdateLinks = false;
+  /**
+   * The canvas link updates {@link wrapLinkUpdatesHandler} took out of a `linkUpdates` array, keyed by that array,
+   * for the patched `updateAllLinks` to apply without Obsidian's *Update links* prompt.
+   */
+  private readonly promptlessLinkUpdatesMap = new WeakMap<LinkUpdate[], LinkUpdate[]>();
   private readonly settingsManager: SettingsManager;
 
   public constructor(params: FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams) {
@@ -766,6 +772,68 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
         return originalMethodBound(newHandler);
       }
     });
+
+    this.registerMethodPatch({
+      $object: this.fileManager,
+      methodName: 'updateAllLinks',
+      patchHandler: async ({
+        originalArguments: [linkUpdates],
+        originalMethodBound
+      }) => {
+        await originalMethodBound(linkUpdates);
+        const promptlessLinkUpdates = this.promptlessLinkUpdatesMap.get(linkUpdates);
+        if (!promptlessLinkUpdates) {
+          return;
+        }
+
+        this.promptlessLinkUpdatesMap.delete(linkUpdates);
+        await this.updateAllLinksWithoutPrompt(promptlessLinkUpdates, originalMethodBound);
+      }
+    });
+
+    this.registerMethodPatch({
+      $object: this.app.vault,
+      methodName: 'getConfig',
+      patchHandler: ({
+        originalArguments: [configItem],
+        originalMethodBound
+      }) => {
+        if (this.isForcingAlwaysUpdateLinks && configItem === 'alwaysUpdateLinks') {
+          return true;
+        }
+
+        return originalMethodBound(configItem);
+      }
+    });
+  }
+
+  /**
+   * Runs Obsidian's native `updateAllLinks` on the canvas link updates this handler handed back, answering its
+   * *Update links* prompt on the user's behalf.
+   *
+   * With `alwaysUpdateLinks` off (Obsidian's default), `updateAllLinks` does not update. It opens a confirmation
+   * and awaits it, so a move this handler made, such as an attachment that a canvas embeds, asked about a file the
+   * user never moved, and this plugin's serial queue waited behind the answer. With `shouldHandleRenames` on, the
+   * handler already rewrites every other link without asking. The canvas entries go back to Obsidian only
+   * because its canvas link updater is the one that edits a canvas correctly, so they get the same treatment.
+   *
+   * In the 1.14.2 bundle `updateAllLinks` reads the setting synchronously, before its first `await`, so it
+   * answers `true` only while that synchronous part runs, and no other reader in the app sees the change. If a
+   * later Obsidian moves the read past an `await`, the prompt returns. That is the behaviour before this fix, not
+   * something worse.
+   *
+   * @param linkUpdates - The canvas link updates to apply.
+   * @param updateAllLinks - Obsidian's native `updateAllLinks`, bound to the file manager.
+   */
+  private async updateAllLinksWithoutPrompt(linkUpdates: LinkUpdate[], updateAllLinks: (linkUpdates: LinkUpdate[]) => Promise<void>): Promise<void> {
+    let updatePromise: Promise<void>;
+    this.isForcingAlwaysUpdateLinks = true;
+    try {
+      updatePromise = updateAllLinks(linkUpdates);
+    } finally {
+      this.isForcingAlwaysUpdateLinks = false;
+    }
+    await updatePromise;
   }
 
   /**
@@ -839,6 +907,12 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
       return;
     }
 
+    /*
+     * A `runAsyncLinkUpdate` started while another is in progress hands its handler the SAME array, so a second
+     * wrapper can reach an array the first one already recorded. Append to that record rather than replace it.
+     */
+    const promptlessLinkUpdates = this.promptlessLinkUpdatesMap.get(linkUpdates) ?? [];
+
     filterInPlace(
       linkUpdates,
       (linkUpdate) => {
@@ -864,17 +938,18 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
           return false;
         }
 
-        if (linkUpdate.sourceFile.extension === CANVAS_FILE_EXTENSION) {
-          return true;
-        }
-
-        if (linkUpdate.resolvedFile.extension === CANVAS_FILE_EXTENSION) {
-          return true;
+        if (linkUpdate.sourceFile.extension === CANVAS_FILE_EXTENSION || linkUpdate.resolvedFile.extension === CANVAS_FILE_EXTENSION) {
+          // Still Obsidian's to apply, but without its prompt: see `updateAllLinksWithoutPrompt`.
+          promptlessLinkUpdates.push(linkUpdate);
         }
 
         return false;
       }
     );
+
+    if (promptlessLinkUpdates.length > 0) {
+      this.promptlessLinkUpdatesMap.set(linkUpdates, promptlessLinkUpdates);
+    }
   }
 }
 
