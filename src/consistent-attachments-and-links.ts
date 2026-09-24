@@ -22,14 +22,14 @@
  *   `Plugin.getPluginConflicts` declares for the same plugin id already covers. Warning about the duplicated
  *   command as well would put two notices on screen for one plugin, the second of them about a command this
  *   plugin is not registering anyway, since its feature surface is shut.
- * - `5.0.0` is that plugin's next major, and dropping a user-facing command is a breaking change for it,
- *   so the release that gives the command up cannot be a minor. Nothing below it has shipped that removal
- *   yet.
+ * - `4.1.0` is the release that gave the command up. It is a minor, not a major: a major of that plugin
+ *   would also lift a version range Custom Attachment Location keys on, so the removal shipped without one.
+ *   The bound therefore names the version rather than following semver.
  *
- * TODO: pin the upper bound to the real version once that release exists, and delete the declaration
- * outright once every version that still registers the command is old enough to have aged out.
+ * TODO: delete the declaration outright once every version that still registers the command is old enough
+ * to have aged out.
  */
-export const CONSISTENT_ATTACHMENTS_AND_LINKS_DELETE_EMPTY_FOLDERS_VERSION_RANGE = '>=4.0.0 <5.0.0';
+export const CONSISTENT_ATTACHMENTS_AND_LINKS_DELETE_EMPTY_FOLDERS_VERSION_RANGE = '>=4.0.0 <4.1.0';
 
 /**
  * The plugin id, as listed in Obsidian's community plugin registry.

@@ -16,8 +16,8 @@ import {
  * afterwards — both plugins run, and this one says so.
  *
  * The stub is installed at a version ABOVE the rename/delete block's ceiling on purpose — `<4.0.0` blocks
- * and `>=4.0.0 <5.0.0` warns, for the same plugin id, so a lower version would shut the surface and the
- * warning would never be reached.
+ * and `>=4.0.0 <4.1.0` warns, for the same plugin id, so a lower version would shut the surface and the
+ * warning would never be reached. It stays below `4.1.0`, the release that dropped the command.
  *
  * Cross-platform: an overlapping plugin is just as installable on a phone, and the manifest declares
  * `isDesktopOnly: false`.

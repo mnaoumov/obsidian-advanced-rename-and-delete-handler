@@ -415,7 +415,7 @@ describe('Plugin', () => {
       expect(conflict?.pluginName).toBe('Consistent Attachments and Links');
       // Bounded BELOW as well: under 4.0.0 that plugin still owns a rename/delete handler, and the BLOCK
       // declared for the same id already owns that message.
-      expect(conflict?.conflictingVersionRange).toBe('>=4.0.0 <5.0.0');
+      expect(conflict?.conflictingVersionRange).toBe('>=4.0.0 <4.1.0');
       expect(conflict?.reason).toContain('Delete empty folders');
       plugin.unload();
     });
