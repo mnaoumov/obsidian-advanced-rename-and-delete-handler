@@ -165,9 +165,18 @@ const IMAGES_DIRECTORY = join(process.cwd(), 'images', 'screenshots');
 beforeAll(async () => {
   const vault = getTemporaryVault();
 
+  /*
+   * NEITHER staged note carries an H1, and that is the composition rather than an oversight. Obsidian's
+   * inline title already renders the basename above the editor, so a `# Chapter one` line is a second copy
+   * of it one line lower — which shots 2 and 3, both photographed on this source note, showed as `Chapter
+   * one` stacked on `Chapter one`, and which reads to a store visitor as a rendering bug in this plugin.
+   * It was invisible while the caret was in frame, because Live Preview kept the raw `#` visible beside it;
+   * `blurEditor` removing the caret is what made the two lines render identically. The subject of both
+   * frames is the rewritten link, not a heading.
+   */
   vault.populate({
-    [SOURCE_NOTE_PATH]: '# Chapter one\n\nIt continues in [Chapter two](<./Chapter two.md>).\n',
-    [TARGET_NOTE_PATH]: '# Chapter two\n\nThe note the link points at.\n'
+    [SOURCE_NOTE_PATH]: 'It continues in [Chapter two](<./Chapter two.md>).\n',
+    [TARGET_NOTE_PATH]: 'The note the link points at.\n'
   });
   await vault.syncToDevice();
 
@@ -270,7 +279,9 @@ describe('desktop store screenshots', () => {
  * a single column of pixels: shot 3 came back 33 pixels different across two runs of an unchanged plugin,
  * all of them in a 1px-wide vertical bar at x=265, y=170..202 — the caret beside the heading line, caught
  * on the other half of its blink. Whichever phase the shutter lands on is pure timing, so
- * roughly every other capture rewrote a PNG that was in every other respect identical.
+ * roughly every other capture rewrote a PNG that was in every other respect identical. The staged note
+ * carried an H1 then and does not now (see `beforeAll` for why), so those coordinates describe the frame
+ * that measurement was taken on rather than the one this suite captures today.
  *
  * Blurring rather than hiding the caret with injected CSS: an editor that does not have focus is a state
  * Obsidian really renders and a reader really sees, where a focused editor with no caret is not. Nothing
