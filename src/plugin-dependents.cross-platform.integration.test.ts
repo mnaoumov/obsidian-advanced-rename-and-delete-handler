@@ -27,14 +27,16 @@ const DEPENDENTS_HEADING = 'Plugins that depend on this one';
 /*
  * Under the transport's ~30s per-closure cap, not at it. The whole closure is one transport call, so what
  * matters is the SUM of what it declares, not what any single wait asks for — and this budget is charged
- * FIVE times: `openOwnTab` runs three times, and two more waits are written in the closure's own body, for
- * 25 000 ms in total. At 20_000 the sum was 100 000, four times a cap the call would have been killed at
- * first, reported as a bare transport timeout naming the harness rather than the wait that overran.
+ * SEVEN times: `openOwnTab` runs three times, `closeSettings` twice, and two more waits are written in the
+ * closure's own body, for 28 000 ms in total. At 20_000 the sum was 100 000 with five charges, four times a
+ * cap the call would have been killed at first, reported as a bare transport timeout naming the harness
+ * rather than the wait that overran.
  *
- * Every one of the five waits on a settings tab opening or a settings row appearing, which land in a frame
- * or two, so a fifth of the old number costs nothing. There is no long step here to move to `pollInObsidian`.
+ * Every one of the seven waits on a settings modal opening or closing or a settings row appearing, which
+ * land in a frame or two, so a fifth of the old number costs nothing. There is no long step here to move to
+ * `pollInObsidian`.
  */
-const WAIT_TIMEOUT_IN_MILLISECONDS = 5000;
+const WAIT_TIMEOUT_IN_MILLISECONDS = 4000;
 
 interface DependentsProbeResult {
   readonly buttonTexts: string[];
@@ -75,12 +77,29 @@ describe('A plugin that declares this one as a dependency', () => {
             .some((el) => el.childElementCount === 0 && el.textContent === dependentsHeading && el.isShown());
         }
 
+        /*
+         * On a phone, `close()` is not finished when it returns: the modal detaches a beat later, and a tab
+         * selected while it is still leaving is dropped when it goes, leaving `activeTab` undefined. Reopening
+         * straight after a close therefore passed `openOwnTab`'s id check and then showed no tab at all — so the
+         * dependents group never appeared, and each false `isHeadingShown()` read after a reopen was read off an
+         * empty modal. Pausing before `openTabById` did not help; waiting for the detach did. Only the Android
+         * run ever failed this way.
+         */
+        async function closeSettings(): Promise<void> {
+          app.setting.close();
+          await waitUntil({
+            message: 'the settings modal closes',
+            predicate: () => !app.setting.containerEl.isConnected,
+            timeoutInMilliseconds
+          });
+        }
+
         async function openOwnTab(): Promise<void> {
           app.setting.open();
           app.setting.openTabById(pluginId);
           await waitUntil({
             message: 'this plugin\'s settings tab opens',
-            predicate: () => app.setting.activeTab?.id === pluginId,
+            predicate: () => app.setting.activeTab?.id === pluginId && app.setting.activeTab.containerEl.isShown(),
             timeoutInMilliseconds
           });
         }
@@ -88,7 +107,7 @@ describe('A plugin that declares this one as a dependency', () => {
         try {
           await openOwnTab();
           const isHeadingShownBefore = isHeadingShown();
-          app.setting.close();
+          await closeSettings();
 
           app.workspace.trigger('obsidian-dev-utils:plugin-loaded', payload);
           await openOwnTab();
@@ -109,7 +128,7 @@ describe('A plugin that declares this one as a dependency', () => {
             timeoutInMilliseconds
           });
           const openedTabId = app.setting.activeTab?.id ?? '';
-          app.setting.close();
+          await closeSettings();
 
           app.workspace.trigger('obsidian-dev-utils:plugin-unloaded', payload);
           await openOwnTab();
