@@ -46,7 +46,6 @@ import type {
   RescueDestination
 } from './rename-delete-handler-component.ts';
 
-import { checkIsAttachmentUnitFolder } from './attachment-unit-folder-designation.ts';
 import { RescueAttachmentUsedByMultipleNotesMode } from './plugin-settings.ts';
 import { showRescueAmbiguityModal } from './rescue-ambiguity-modal.ts';
 
@@ -142,8 +141,8 @@ export class RescuePathResolver {
        * had before it asked at all.
        */
       unitFolderPath: findAttachmentUnitFolderPath({
-        attachmentPath: params.attachmentPath,
-        checkIsAttachmentUnitFolder: (folderPath) => checkIsAttachmentUnitFolder({ folderPath, vault: this.app.vault })
+        app: this.app,
+        attachmentPath: params.attachmentPath
       })
     };
   }

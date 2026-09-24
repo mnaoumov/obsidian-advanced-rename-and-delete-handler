@@ -2,6 +2,7 @@ import type {
   App as AppOriginal,
   TFile
 } from 'obsidian';
+import type { GetAvailablePathForAttachmentsFunctionExtended } from 'obsidian-dev-utils/obsidian/attachment-path';
 
 import { NoPriorityWinnerReason } from 'obsidian-dev-utils/obsidian/note-priority';
 import { strictProxy } from 'obsidian-dev-utils/strict-proxy';
@@ -89,7 +90,9 @@ function createResolver(options: CreateResolverOptions = {}): RescuePathResolver
       getAvailablePathForAttachments: Object.assign(
         vi.fn(),
         options.unitFolderPaths
-          ? { checkIsAttachmentUnitFolder: (folderPath: string): boolean => options.unitFolderPaths?.includes(folderPath) ?? false }
+          ? {
+            checkIsAttachmentUnitFolder: (folderPath: string): boolean => options.unitFolderPaths?.includes(folderPath) ?? false
+          } satisfies Pick<Required<GetAvailablePathForAttachmentsFunctionExtended>, 'checkIsAttachmentUnitFolder'>
           : {}
       ),
       getFileByPath: vi.fn((path: string) => path === ATTACHMENT_PATH ? attachmentFile : noteFiles.get(path) ?? null)
