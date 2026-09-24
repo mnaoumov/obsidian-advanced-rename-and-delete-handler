@@ -26,21 +26,32 @@ import {
  * leave "some image references ... while others will not change" — so the same scenario runs here at two
  * sizes, 3 and 30.
  *
- * In `obsidian-custom-attachment-location` this suite did NOT reproduce the defect — nothing edited the note
- * between the snapshot and the rewrite there, so no offset ever drifted and the fragile lookup always hit.
- * That is no longer true in this shape, and it was measured rather than assumed: with `getLinkIdentityKey`
- * replaced by a position-bearing key, BOTH sizes fail here, all three embeds stale at 3 and all thirty at 30
- * (2026-09-02). Moving the note to a much longer destination folder makes the very first rewrite shift every
- * link after it, which is enough on its own — no second party required. So this suite pins the defect
- * directly, and its sibling `note-move-concurrent-edit.desktop.integration.test.ts` pins the reporter's own
- * route to it, an outside edit landing inside the rename window.
+ * **This suite does NOT pin the position-drift defect behind that issue, and cannot in this shape.** Its sibling
+ * `note-move-concurrent-edit.desktop.integration.test.ts` is the ONLY guard of `getLinkIdentityKey` keying on
+ * a link's text rather than its position. Measured 2026-09-20: with `position` added to that key, the sibling
+ * fails with exactly the predicted tail (the 15 embeds below its mid-note insertion) while this suite passes
+ * at both sizes — and the pre-conversion copy of this suite passes too, so the Node-side waiting below did
+ * not weaken it.
  *
- * Two vault settings are deliberate, because with the defaults the scenario could not exhibit the defect even
- * in principle and would be green for a second, wrong reason:
- *   - `newLinkFormat: 'absolute'` — with the default shortest-path format every rewritten link is just the
- *     bare file name, identical before and after the move, so no offsets shift.
- *   - the destination folder name is LONGER than the source's — the folder is part of every link under the
- *     absolute format, so a length change is what makes each rewrite shift the links after it.
+ * It cannot fail that way because a note's own rewrite never shifts its own links. The handler rewrites every
+ * link in one holder through ONE `editLinks` call, and `editLinks` computes all of that file's changes from a
+ * single metadata-cache read of a single content before applying any of them — so a link growing by a
+ * longer folder name moves nothing another change is looked up by. A snapshot offset only goes stale if the
+ * note's content changes between the snapshot and that read, and in this scenario nothing edits the note;
+ * supplying that edit is precisely what the sibling adds. An earlier version of this header claimed the
+ * opposite, from a 2026-09-02 probe in which both sizes went fully stale; that probe also turned the sibling
+ * fully stale rather than stale below its insertion point, which is the signature of a key that matched no
+ * link at all, not of drift.
+ *
+ * What it does pin is the scale half of the report: a thirty-attachment move — thirty attachment renames
+ * through the plugin's queue, then one rewrite of a thirty-link note — leaves every embed resolving, and does
+ * so at the small size too, so a regression that only appears with scale is told apart from one that does
+ * not.
+ *
+ * `newLinkFormat: 'absolute'` is deliberate: with the default shortest-path format every link is just the bare
+ * file name, which still resolves after the move whether or not anything rewrote it, so the suite would be
+ * green without the rewrite having happened. Under the absolute format every link names the source folder,
+ * so a link the handler skipped is left pointing at a path that no longer exists.
  *
  * Ported from `obsidian-custom-attachment-location`, which deleted the suite when it stopped registering a
  * rename/delete handler. Rewritten rather than copied: the original assigned to a settings object it found by
@@ -222,7 +233,7 @@ describe('Moving a note with attachments', () => {
   for (const attachmentCount of ATTACHMENT_COUNTS) {
     it(`keeps every one of its ${attachmentCount.toString()} embeds resolving`, async () => {
       const SRC_FOLDER = `rdh-note-move-${attachmentCount.toString()}-src`;
-      // Deliberately longer than the source, so every rewritten link grows and the links after it shift.
+      // Any folder other than the source would do: under the absolute format a missed rewrite then names a gone path.
       const DST_FOLDER = `rdh-note-move-${attachmentCount.toString()}-destination-with-a-much-longer-name`;
       const SRC_NOTE = `${SRC_FOLDER}/note.md`;
       const DST_NOTE = `${DST_FOLDER}/note.md`;
@@ -250,8 +261,8 @@ describe('Moving a note with attachments', () => {
 
         /*
          * Every embed must still resolve. Asserted on the whole list rather than a count, so a partial failure
-         * NAMES the links that went stale — which of them fail is the evidence for the position-drift
-         * mechanism, the broken build failing with exactly the tail of the note.
+         * NAMES the links that went stale — which of them fail is the first evidence of what broke: a
+         * contiguous tail says an offset drifted, every link says the snapshot lookup matched nothing.
          */
         expect(result.staleLinks).toStrictEqual([]);
       } finally {

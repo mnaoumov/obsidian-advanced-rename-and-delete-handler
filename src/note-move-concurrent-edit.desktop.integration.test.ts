@@ -26,9 +26,11 @@ import {
  *
  * See https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/60 ("The image link is not
  * updated"). This suite pins the reporter's own route to the defect: the one field they did fill in was
- * "only with other plugins enabled", so what is staged here is that second plugin. (Its sibling
- * `note-move-many-attachments.desktop.integration.test.ts` reaches the same defect without one — see its
- * header for the measurement — so the two are complementary rather than duplicates.)
+ * "only with other plugins enabled", so what is staged here is that second plugin. It is also the ONLY suite
+ * that pins the defect: without an outside edit nothing moves a snapshotted offset, because the rewrite reads
+ * one holder's links from a single cache read, so its sibling
+ * `note-move-many-attachments.desktop.integration.test.ts` stays green against a position-bearing key — see
+ * its header for the measurement and for what it guards instead.
  *
  * The second party is supplied in the smallest deterministic way there is. From inside the vault
  * `rename` event of the first attachment move — precisely the window between `RenameMap.initBacklinksMap()`
@@ -75,7 +77,7 @@ const SCENARIO_TIMEOUT_IN_MILLISECONDS = 180_000;
 const INSERTED_LINE = 'A line inserted mid-rename to shift the offsets after it.';
 
 const SRC_FOLDER = 'rdh-note-move-edit-src';
-// Deliberately longer than the source, so every rewritten link grows and the links after it shift.
+// Any folder other than the source would do: under the absolute format a missed rewrite then names a gone path.
 const DST_FOLDER = 'rdh-note-move-edit-destination-with-a-much-longer-name';
 const SRC_NOTE = `${SRC_FOLDER}/note.md`;
 const DST_NOTE = `${DST_FOLDER}/note.md`;
