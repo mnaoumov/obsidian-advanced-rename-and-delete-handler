@@ -74,9 +74,10 @@ interface SettingLike {
   setting: AppSettingLike;
 }
 
-// The overlap banner's single input. Whether it writes anything is what decides the row's fate, since the
-// Row hides itself when the library renders nothing.
+// The overlap banner's two inputs: what the library writes into the row, and whether a warning conflict
+// Holds at all, which is what decides whether the row exists.
 const renderConflictWarningBannerMock = vi.fn<(containerEl: HTMLElement) => void>();
+const hasActiveWarningConflictsMock = vi.fn<() => boolean>();
 
 let app: AppOriginal;
 let pluginDependentsComponent: PluginDependentsComponent;
@@ -86,6 +87,7 @@ beforeEach(() => {
   // `clearAllMocks` drops the recorded calls but keeps any implementation set by an earlier test, and
   // Whether this one writes into the container is exactly what the overlap row's tests differ on.
   renderConflictWarningBannerMock.mockReset();
+  hasActiveWarningConflictsMock.mockReset();
   app = App.createConfigured__().asOriginalType__();
   // `app.setting` is the one member the dependents row reaches that obsidian-test-mocks does not model.
   castTo<SettingLike>(app).setting = { openTabById: vi.fn() };
@@ -214,27 +216,28 @@ describe('PluginSettingsTab', () => {
 
     // The library renders nothing when no overlap holds, and an empty row is still a row — a divider and a
     // Block of padding with nothing in it.
-    it('should hide itself when the gate renders no banner', () => {
-      const tab = createTab();
-      const setting = new SettingEx(tab.containerEl);
+    it('should hide itself when no warning conflict holds', () => {
+      hasActiveWarningConflictsMock.mockReturnValue(false);
 
-      bannerRow(tab).render(setting, castTo<SettingGroup>(null));
-
-      // `isShown()` reads `offsetParent`, which jsdom never populates, so the display style is what a test
-      // Can actually see here.
-      expect(setting.settingEl.style.display).toBe('none');
+      expect(isVisible(bannerRow(createTab()))).toBe(false);
     });
 
-    it('should stay visible once the gate has rendered a banner', () => {
-      renderConflictWarningBannerMock.mockImplementation((containerEl) => {
-        containerEl.createDiv({ text: 'Overlap' });
-      });
+    it('should show itself while a warning conflict holds', () => {
+      hasActiveWarningConflictsMock.mockReturnValue(true);
+
+      expect(isVisible(bannerRow(createTab()))).toBe(true);
+    });
+
+    // A function, not a value: the gate re-evaluates as plugins are enabled and disabled while the tab is open,
+    // And the tab re-reads a function form on every render.
+    it('should re-read the gate on every evaluation', () => {
       const tab = createTab();
-      const setting = new SettingEx(tab.containerEl);
+      hasActiveWarningConflictsMock.mockReturnValue(false);
+      expect(isVisible(bannerRow(tab))).toBe(false);
 
-      bannerRow(tab).render(setting, castTo<SettingGroup>(null));
+      hasActiveWarningConflictsMock.mockReturnValue(true);
 
-      expect(setting.settingEl.style.display).toBe('');
+      expect(isVisible(bannerRow(tab))).toBe(true);
     });
 
     // It is not a setting, so it must not surface as one in Obsidian's settings search.
@@ -320,6 +323,7 @@ function createTab(): PluginSettingsTab {
   return new PluginSettingsTab({
     getPluginGateComponent: (): PluginGateComponent =>
       strictProxy<PluginGateComponent>({
+        hasActiveWarningConflicts: hasActiveWarningConflictsMock,
         renderConflictWarningBanner: renderConflictWarningBannerMock
       }),
     plugin,
@@ -389,8 +393,8 @@ function headings(tab: PluginSettingsTab): string[] {
   return groups(tab).map((group) => group.heading ?? '');
 }
 
-function isVisible(group: SettingDefinitionGroup): boolean {
-  return typeof group.visible === 'function' ? group.visible() : group.visible ?? true;
+function isVisible(definition: SettingDefinitionGroup | SettingDefinitionRender): boolean {
+  return typeof definition.visible === 'function' ? definition.visible() : definition.visible ?? true;
 }
 
 /**

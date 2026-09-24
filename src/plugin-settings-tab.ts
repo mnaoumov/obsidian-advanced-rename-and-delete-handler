@@ -63,19 +63,16 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
       // The overlap banner has to travel as a ROW: Obsidian renders the declarative definitions and never
       // Calls `display()` once `getSettingDefinitions()` is non-empty, so there is no container to write
       // Into otherwise. The row body is emptied first, leaving the Setting element as a bare host for the
-      // Banner. It cannot take a `visible` predicate yet: the library version this plugin compiles against
-      // Renders the banner but does not expose whether there is one to render, so the row is hidden after
-      // The fact when nothing was written into it. Swap this for a predicate once the floor moves.
+      // Banner. The row exists only while a warning conflict holds, since the library renders nothing
+      // Otherwise and an empty row is still a divider and a block of padding.
       this.settingEx({
         name: '',
         render: (setting) => {
           setting.settingEl.empty();
           this.getPluginGateComponent().renderConflictWarningBanner(setting.settingEl);
-          if (!setting.settingEl.hasChildNodes()) {
-            setting.settingEl.hide();
-          }
         },
-        searchable: false
+        searchable: false,
+        visible: () => this.getPluginGateComponent().hasActiveWarningConflicts()
       }),
       this.settingGroupEx({
         heading: 'Plugins that depend on this one',
