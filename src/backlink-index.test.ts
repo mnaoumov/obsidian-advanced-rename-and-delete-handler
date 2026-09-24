@@ -75,7 +75,8 @@ vi.mock('obsidian-dev-utils/obsidian/async-with-notice', () => ({
 vi.mock('obsidian-dev-utils/obsidian/file-system', () => ({
   getFile: ({ pathOrFile }: PathOrFileParams): TFile => typeof pathOrFile === 'string' ? currentVault.files.get(pathOrFile) ?? makeFile(pathOrFile) : pathOrFile,
   getFileOrNull: ({ pathOrFile }: PathOrFileParams): null | TFile => typeof pathOrFile === 'string' ? currentVault.files.get(pathOrFile) ?? null : pathOrFile,
-  getPath: (_app: App, pathOrFile: string | TFile): string => typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.path
+  getPath: (_app: App, pathOrFile: string | TFile): string => typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.path,
+  isCanvasFile: (file: TFile): boolean => file.path.endsWith('.canvas')
 }));
 
 vi.mock('obsidian-dev-utils/obsidian/metadata-cache', () => ({
@@ -430,17 +431,35 @@ describe('BacklinkIndex', () => {
       expect(mockReadSafe).toHaveBeenCalledTimes(3);
     });
 
-    it('stops checking at a reference that is neither a text nor a frontmatter link, such as a canvas embed', async () => {
+    it('stops checking at a reference that is neither a text nor a frontmatter link', async () => {
       const vault = currentVault;
       vault.setNote('target.md', {});
-      vault.files.set('board.canvas', makeFile('board.canvas'));
-      vault.canvasReferences.push({ reference: { link: 'target', original: '' }, sourcePath: 'board.canvas' });
+      vault.files.set('board.other', makeFile('board.other'));
+      vault.canvasReferences.push({ reference: { link: 'target', original: '' }, sourcePath: 'board.other' });
       mockReadSafe.mockResolvedValue('{}');
       const index = new BacklinkIndex(vault.app);
 
       const backlinks = await index.getBacklinksForFileSafe('target.md');
-      expect(backlinks.keys()).toEqual(['board.canvas']);
+      expect(backlinks.keys()).toEqual(['board.other']);
       expect(mockReadSafe).toHaveBeenCalledOnce();
+    });
+
+    it('takes a canvas as current without reading it, since a text-node position is an offset into the node', async () => {
+      const vault = currentVault;
+      vault.setNote('target.md', {});
+      vault.files.set('board.canvas', makeFile('board.canvas'));
+      // Obsidian's canvas index reports a text-node embed first, positioned at the start of the node's own text.
+      vault.canvasReferences.push(
+        { reference: link('target', 0), sourcePath: 'board.canvas' },
+        { reference: { link: 'target', original: '' }, sourcePath: 'board.canvas' }
+      );
+      mockReadSafe.mockResolvedValue('{"nodes":[]}');
+      const index = new BacklinkIndex(vault.app);
+
+      const backlinks = await index.getBacklinksForFileSafe('target.md');
+      expect(backlinks.keys()).toEqual(['board.canvas']);
+      expect(mockReadSafe).not.toHaveBeenCalled();
+      expect(mockSaveNote).not.toHaveBeenCalled();
     });
   });
 });

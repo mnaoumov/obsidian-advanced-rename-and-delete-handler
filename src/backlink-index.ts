@@ -52,7 +52,8 @@ import { retryWithTimeoutNotice } from 'obsidian-dev-utils/obsidian/async-with-n
 import {
   getFile,
   getFileOrNull,
-  getPath
+  getPath,
+  isCanvasFile
 } from 'obsidian-dev-utils/obsidian/file-system';
 import { parseFrontmatter } from 'obsidian-dev-utils/obsidian/frontmatter';
 import { toFrontmatterLinkCacheWithOffsets } from 'obsidian-dev-utils/obsidian/frontmatter-link-cache-with-offsets';
@@ -219,6 +220,18 @@ export class BacklinkIndex {
     const note = getFileOrNull({ app: this.app, pathOrFile: notePath });
     if (!note) {
       return false;
+    }
+
+    /*
+     * A canvas's references come from the canvas index, not from its file text, so the file holds nothing to
+     * compare them with. A text-node embed does carry a position, but it is an offset into that node's own text,
+     * so slicing the canvas JSON at it never gives the embed back and the retry around this check never ends:
+     * moving a canvas whose text node embeds its attachment held the rename queue forever. The library's loop
+     * escapes only when a file-node reference happens to come first, because it stops at the first reference of
+     * neither kind.
+     */
+    if (isCanvasFile(note)) {
+      return true;
     }
 
     await saveNote(this.app, note);
