@@ -789,6 +789,13 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * Every exclusion below is therefore kept for the correctness reason its own comment gives, and none of them
    * is worth narrowing for speed.
    *
+   * Nor can the walk be deferred by handing the handler a lazy `linkUpdates` that collects on first access. The
+   * walk resolves every link against the vault as it stands BEFORE the handler runs, and every reader of the
+   * array reads it AFTER the handler has changed the vault: this method's own bail-outs (so every rename under
+   * the default `shouldHandleRenames: false`), `updateAllLinks`, and Obsidian's Note Composer merge, which
+   * re-points the entries whose `resolvedFile` is the note it has just trashed. Collected that late, a link to
+   * a renamed or trashed file no longer resolves, its entry is never made, and the link is left dangling.
+   *
    * @param linkUpdates - The link updates Obsidian collected before invoking the handler.
    * @param linkUpdatesHandler - The original handler passed to {@link FileManager.runAsyncLinkUpdate}.
    */
