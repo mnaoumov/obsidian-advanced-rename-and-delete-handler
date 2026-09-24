@@ -1,5 +1,6 @@
 import type { PopulateFilesParams } from 'obsidian-integration-testing';
 
+import { basename } from 'node:path/posix';
 import process from 'node:process';
 
 /**
@@ -85,6 +86,40 @@ export const DELETE_WALK_ATTACHMENT_COUNT = 20;
 const DELETE_WALK_HOLDER = `${DELETE_WALK_ROOT_FOLDER}/holder.md`;
 
 /**
+ * Root of the `base-rename` suite's fixture: one base, and {@link BASE_RENAME_EMBEDDER_COUNT} notes that embed it.
+ */
+export const BASE_RENAME_ROOT_FOLDER = 'base-rename';
+
+/**
+ * The base the `base-rename` suite renames.
+ */
+export const BASE_RENAME_BASE_PATH = `${BASE_RENAME_ROOT_FOLDER}/Bases/sub notes with up-Property (multiple views).base`;
+
+/**
+ * The shapes the embedders reference the base in, one per embedder in turn. The reporter's base sat in a subfolder and
+ * carried spaces and parentheses in its name, so each shape is one a vault like that can hold.
+ */
+const BASE_RENAME_REFERENCE_SHAPES: readonly ((basePath: string) => string)[] = [
+  (basePath): string => `![[${basename(basePath)}]]`,
+  (basePath): string => `![[${basename(basePath)}#Table]]`,
+  (basePath): string => `![[${basePath}]]`,
+  (basePath): string => `![[${basename(basePath)}|Sub notes]]`,
+  (basePath): string => `![](<${basePath}>)`,
+  (basePath): string => `---\nup: "[[${basename(basePath)}]]"\n---\n`
+];
+
+/**
+ * The notes that reference {@link BASE_RENAME_BASE_PATH}, each in one of {@link BASE_RENAME_REFERENCE_SHAPES}.
+ */
+export const BASE_RENAME_EMBEDDERS_FOLDER = `${BASE_RENAME_ROOT_FOLDER}/embedders`;
+
+/**
+ * How many notes embed the base: the count the report of
+ * https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/issues/3 names.
+ */
+export const BASE_RENAME_EMBEDDER_COUNT = 903;
+
+/**
  * How many unrelated notes, {@link RENAME_WALK_BACKGROUND_LINKS_PER_NOTE} links each, surround the renamed folder, so a whole-vault walk costs something
  * and the vault is not trivially small.
  */
@@ -148,6 +183,14 @@ export function generatePerformanceVault(): PopulateFilesParams {
 
   for (let holderIndex = 0; holderIndex < RENAME_WALK_HOLDER_COUNT; holderIndex++) {
     files[`${RENAME_WALK_HOLDERS_FOLDER}/holder-${String(holderIndex)}.md`] = `${holderLinks.join('\n')}\n`;
+  }
+
+  files[BASE_RENAME_BASE_PATH] = 'views:\n  - type: table\n    name: Table\n';
+  for (let embedderIndex = 0; embedderIndex < BASE_RENAME_EMBEDDER_COUNT; embedderIndex++) {
+    const shape = BASE_RENAME_REFERENCE_SHAPES[embedderIndex % BASE_RENAME_REFERENCE_SHAPES.length];
+    const reference = shape?.(BASE_RENAME_BASE_PATH) ?? '';
+    const content = reference.startsWith('---') ? `${reference}# Embedder ${String(embedderIndex)}\n` : `# Embedder ${String(embedderIndex)}\n\n${reference}\n`;
+    files[`${BASE_RENAME_EMBEDDERS_FOLDER}/embedder-${String(embedderIndex)}.md`] = content;
   }
 
   const holderEmbeds: string[] = [];
