@@ -27,10 +27,22 @@ import {
  * name reads as the opposite of the case it covers — every canvas here is a canvas, and what varies is
  * whether it is complete.
  *
- * What this proves end to end: the rename completes, still relocates the embedded attachment, and leaves the
- * canvas file BYTE-IDENTICAL to what was written — no write happened, which is the guard holding. The
- * `{}`-shaped transient Advanced Canvas leaves mid-initialization cannot be staged headlessly; that half is
- * the second, deliberately skipped case below.
+ * What this proves end to end: the rename completes, still relocates the embedded attachment, and THIS PLUGIN
+ * never writes the canvas — which is the guard holding — while the canvas keeps exactly the data it was
+ * written with. The `{}`-shaped transient Advanced Canvas leaves mid-initialization cannot be staged
+ * headlessly; that half is the second, deliberately skipped case below.
+ *
+ * Why "this plugin never writes it" rather than "the file is byte-identical", which is what this suite used
+ * to assert: Obsidian writes the canvas itself. The handler hands every link update whose source is a canvas
+ * back to Obsidian's native updater, and that updater (`applyUpdates` in Obsidian's canvas link updater, read
+ * out of the 1.14.2 bundle) rewrites only TEXT nodes but re-serializes the whole file in Obsidian's own
+ * tab-indented, one-node-per-line format every time it runs, changed or not. It runs whenever Obsidian's canvas
+ * index already holds the canvas when the attachment moves. Against a canvas created a few milliseconds earlier
+ * that was a coin toss — the index usually lagged, so the file stayed byte-identical and the suite passed, and
+ * about one desktop aggregate in three it did not, which read as a `flushQueue` ordering race. It was not one:
+ * waiting for the index first, as the case below now does, fails the byte-identity assertion every time. A
+ * canvas in a real vault is always indexed, so Obsidian's rewrite is the ordinary case, and on desktop the suite
+ * now stages it deliberately. Why only on desktop is explained where the index is waited for.
  *
  * Ported from `obsidian-custom-attachment-location`, which deleted the suite when it stopped registering a
  * rename/delete handler. Rewritten rather than copied: the original assigned to a settings object it found by
@@ -51,6 +63,7 @@ interface CanvasGuardResult {
   readonly hasAttachmentAtOldPath: boolean;
   readonly movedCanvasContent: string;
   readonly originalCanvasContent: string;
+  readonly pluginCanvasWriteStacks: readonly string[];
 }
 
 interface CanvasNodesProbe {
@@ -77,6 +90,10 @@ interface MigrationApiLike {
 
 interface ObsidianDevUtilsStateLike {
   readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
+}
+
+interface PathHolderLike {
+  readonly path: string;
 }
 
 /**
@@ -140,13 +157,16 @@ describe('Moving a partial canvas', () => {
          * is killed at the cap first and reported as a bare transport timeout naming the harness rather than
          * the wait that actually overran. A helper's budget is charged once per CALL SITE, so this one is
          * charged twice — `applySettings` runs at the start and again in the `finally` — which with
-         * {@link EFFECT_TIMEOUT_IN_MILLISECONDS} makes 28 000 ms in total. What is waited on here lands in
-         * well under a second, so a budget this size costs nothing — a wait that can genuinely run long
-         * belongs in `pollInObsidian`, with Node doing the waiting, as the two note-move suites here now do.
+         * {@link INDEX_TIMEOUT_IN_MILLISECONDS} and {@link EFFECT_TIMEOUT_IN_MILLISECONDS} makes 28 000 ms in
+         * total. What is waited on here lands in well under a second, so a budget this size costs nothing — a
+         * wait that can genuinely run long belongs in `pollInObsidian`, with Node doing the waiting, as the two
+         * note-move suites here now do.
          */
         const WAIT_TIMEOUT_IN_MILLISECONDS = 9000;
+        // Measured at 50-160 ms from the canvas's creation to its entry in Obsidian's canvas index.
+        const INDEX_TIMEOUT_IN_MILLISECONDS = 2000;
         // Shorter than the project's own test timeout, so a missing effect is reported by an assertion rather than by vitest.
-        const EFFECT_TIMEOUT_IN_MILLISECONDS = 10_000;
+        const EFFECT_TIMEOUT_IN_MILLISECONDS = 8000;
 
         const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
           ?.find((candidate) => !candidate.isRevoked);
@@ -207,6 +227,64 @@ describe('Moving a partial canvas', () => {
 
         const originalAttachmentFolderPath = app.vault.getConfig('attachmentFolderPath');
 
+        /*
+         * Every write that reaches the canvas is recorded with the stack it was made from, and the ones made
+         * from this plugin's code are what the guard forbids. Obsidian evaluates a plugin's bundle under the
+         * source URL `plugin:<id>`, so a frame naming it is this plugin — including the `obsidian-dev-utils`
+         * code bundled into it, which is where the guarded rewrite lives. Obsidian's own writes carry
+         * `app://obsidian.md` frames only. Both the vault-level and adapter-level entry points are observed, so
+         * a write taking either path is seen. Each observer shadows the method with an own property and the
+         * `finally` removes it again, so the next suite on this shared instance meets the vault untouched.
+         */
+        const pluginFrameMarker = `plugin:${pluginId}:`;
+        const pluginCanvasWriteStacks: string[] = [];
+        const writeObserverRemovers: (() => void)[] = [];
+
+        /**
+         * Records every call of one write method whose target is a canvas, keeping the stacks made from this plugin.
+         *
+         * @param target - The vault or its adapter.
+         * @param methodName - The write method to observe.
+         * @param getPath - Reads the written path out of the method's first argument.
+         */
+        function observeCanvasWrites(target: object, methodName: string, getPath: (firstArgument: unknown) => string): void {
+          const hasOwnMethod = Object.hasOwn(target, methodName);
+          const originalMethod = Reflect.get(target, methodName) as (...methodArguments: unknown[]) => unknown;
+          Object.assign(target, {
+            [methodName](this: unknown, ...methodArguments: unknown[]): unknown {
+              const path = getPath(methodArguments[0]);
+              if (path.endsWith('.canvas')) {
+                const stack = new Error(`${methodName} of ${path}`).stack ?? '';
+                if (stack.includes(pluginFrameMarker)) {
+                  pluginCanvasWriteStacks.push(stack);
+                }
+              }
+
+              return originalMethod.apply(this, methodArguments);
+            }
+          });
+          writeObserverRemovers.push(() => {
+            if (hasOwnMethod) {
+              Object.assign(target, { [methodName]: originalMethod });
+            } else {
+              Reflect.deleteProperty(target, methodName);
+            }
+          });
+        }
+
+        function getFilePath(file: unknown): string {
+          return (file as PathHolderLike).path;
+        }
+
+        function getAdapterPath(path: unknown): string {
+          return path as string;
+        }
+
+        observeCanvasWrites(app.vault, 'modify', getFilePath);
+        observeCanvasWrites(app.vault, 'process', getFilePath);
+        observeCanvasWrites(app.vault.adapter, 'process', getAdapterPath);
+        observeCanvasWrites(app.vault.adapter, 'write', getAdapterPath);
+
         // Everything that mutates shared state sits inside the `try`, so the `finally` below puts the vault back however this ends.
         try {
           app.vault.setConfig('attachmentFolderPath', './assets');
@@ -240,6 +318,31 @@ describe('Moving a partial canvas', () => {
           );
           const canvas = await app.vault.create(SRC_CANVAS, partialCanvasContent);
 
+          /*
+           * The state every real canvas is in: already indexed by Obsidian, which is what makes its native link
+           * updater rewrite the file when the attachment moves. Renaming before the index caught up is what
+           * made this suite's outcome depend on timing; see the header.
+           *
+           * Desktop only, and not by choice. On Android the same staging never finishes: Obsidian's own
+           * `fileManager.updateAllLinks` rewrites the indexed partial canvas and then never resolves, so the
+           * attachment's `renameFile` never returns and this plugin's queue is held behind it — measured
+           * 2026-09-24, a stall inside Obsidian's link updater, not in this plugin. The assertions below hold
+           * whichever state the canvas is in, so on Android the suite still checks the guard, on whichever path
+           * the index timing gives it.
+           */
+          if (!app.isMobile) {
+            const canvasIndex = app.internalPlugins.getPluginById('canvas')?.instance.index;
+            if (!canvasIndex) {
+              throw new Error('the Canvas core plugin is not enabled');
+            }
+
+            await waitUntil({
+              message: 'Obsidian\'s canvas index holds the canvas and its file node',
+              predicate: () => (canvasIndex.index[SRC_CANVAS]?.embeds.length ?? 0) > 0,
+              timeoutInMilliseconds: INDEX_TIMEOUT_IN_MILLISECONDS
+            });
+          }
+
           await app.fileManager.renameFile(canvas, DST_CANVAS);
 
           /*
@@ -260,9 +363,10 @@ describe('Moving a partial canvas', () => {
            * Drained AFTER the move, not before. `flushQueue` appends a no-op and awaits the queue's promise
            * chain, so it only covers what is ALREADY enqueued when it is called — and the handler enqueues
            * its operation from the vault's `rename` event, after `renameFile` has resolved. Draining first
-           * therefore drains an empty queue and returns at once, leaving the canvas to be read while the
-           * operation is still in flight and intermittently catching a transient re-serialized copy. Waiting
-           * for the moved attachment proves the operation is underway; this waits for the rest of it.
+           * therefore drains an empty queue and returns at once, leaving the canvas to be read — and the write
+           * observer below to be torn down — while the operation, and the canvas write the guard is there to
+           * skip, is still in flight. Waiting for the moved attachment proves the operation is underway; this
+           * waits for the rest of it.
            */
           await flushQueue();
 
@@ -275,9 +379,13 @@ describe('Moving a partial canvas', () => {
             hasAttachmentAtNewPath: app.vault.getAbstractFileByPath(DST_ATTACHMENT) !== null,
             hasAttachmentAtOldPath: app.vault.getAbstractFileByPath(SRC_ATTACHMENT) !== null,
             movedCanvasContent: await app.vault.read(movedCanvas),
-            originalCanvasContent: partialCanvasContent
+            originalCanvasContent: partialCanvasContent,
+            pluginCanvasWriteStacks
           };
         } finally {
+          for (const removeWriteObserver of writeObserverRemovers) {
+            removeWriteObserver();
+          }
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
           // Back to the defaults declared in `src/plugin-settings.ts`, so the next suite starts where this one found things.
           await applySettings({
@@ -307,14 +415,22 @@ describe('Moving a partial canvas', () => {
     expect(result.hasAttachmentAtOldPath).toBe(false);
 
     /*
-     * The guard itself: the partial canvas is left EXACTLY as it was written. Anything else means the
-     * malformed shape was re-serialized, which is the corruption the issue is about — and a byte-identical
-     * file is the strongest available evidence that no write happened at all.
+     * The guard itself: this plugin never wrote the partial canvas. A write from it is the malformed shape
+     * being re-serialized, which is the corruption the issue is about. Removing the guard from the built
+     * bundle fails exactly this assertion, on one `vault.process` from the bundled `applyFileChanges` and the
+     * `adapter.process` it makes underneath.
      */
-    expect(result.movedCanvasContent).toBe(result.originalCanvasContent);
+    expect(result.pluginCanvasWriteStacks).toEqual([]);
+
+    /*
+     * And the canvas holds exactly the data it was written with: no `edges` array invented, the file node
+     * untouched. Compared as parsed data rather than as bytes, because Obsidian's own link updater
+     * re-serializes it in its own format — see the header.
+     */
+    const parsedCanvas = JSON.parse(result.movedCanvasContent) as CanvasNodesProbe;
+    expect(parsedCanvas).toEqual(JSON.parse(result.originalCanvasContent));
 
     // Which leaves it a canvas Obsidian's renderer can still read: parseable, and carrying its nodes array.
-    const parsedCanvas = JSON.parse(result.movedCanvasContent) as CanvasNodesProbe;
     expect(Array.isArray(parsedCanvas.nodes)).toBe(true);
   });
 
