@@ -24,13 +24,19 @@
  * not one of them names a version — the app is simply whatever APK the AVD carries, changed by
  * rebuilding the AVD rather than by configuration.
  *
- * So the desktop conclusion — that the capture is byte-stable once the Obsidian is pinned and the caret is
- * out of the frame — is NOT claimed for these two shots. It has not been measured on this host: the
- * `obsidian_screenshots` AVD wedges during Appium session creation and no Android capture run has reached a
- * shot since. If a run here ever rewrites a PNG, look at the frame before assuming it is noise;
- * the AVD's Obsidian moving is the first thing to rule out, and the caret the second — the desktop half
- * drops focus in its own `shoot` for exactly that reason, and nothing equivalent is done here because there
- * has been no run to measure it against.
+ * **These two shots ARE byte-stable on this host, and that is measured rather than assumed.** Three
+ * consecutive runs on 2026-09-23, each booting a fresh `obsidian_screenshots` emulator and tearing it down
+ * again, reproduced shot 1 byte for byte all three times and shot 2 byte for byte across the two runs that
+ * shared its staging. So a moved PNG here is signal, exactly as it is on the desktop side: look at the frame
+ * before reaching for `git checkout`. What is NOT pinned is the Obsidian, per the paragraph above, so the
+ * first thing to rule out is the AVD's APK having moved. The caret is the second and has never yet appeared
+ * in a frame here, which is why nothing equivalent to the desktop half's `blurEditor` is done — a phone
+ * screenshot is taken with the editor unfocused already.
+ *
+ * **The record here used to say the opposite, and it was wrong in both halves.** It said the AVD wedged
+ * during Appium session creation and that no Android capture run had reached a shot since. The committed
+ * frames were produced by a run — `e9b0e87`, 2026-08-29 — and each of the three runs above booted the AVD
+ * and finished in 87 to 167 seconds, cold. Nothing was done to the AVD to achieve that.
  */
 
 import {
@@ -55,6 +61,7 @@ import {
 } from 'vitest';
 
 interface RenameProbe {
+  readonly activeFilePath: null | string;
   readonly linkTextAfter: string;
   readonly noticeText: string;
 }
@@ -67,6 +74,7 @@ interface SettingsModalWithContainer {
 }
 
 interface SettingsProbe {
+  readonly noticeText: string;
   readonly settingNames: string[];
 }
 
@@ -77,6 +85,25 @@ const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const SOURCE_NOTE_PATH = 'Screenshots/Chapter one.md';
 const TARGET_NOTE_PATH = 'Screenshots/Chapter two.md';
 const RENAMED_TARGET_NOTE_PATH = 'Screenshots/Chapter two renamed.md';
+
+/**
+ * The first-load notice, which every capture run meets and neither frame here wants.
+ *
+ * `FirstLoadNoticeComponent` speaks once per vault, when there is no `data.json` to read — which is every
+ * run of this suite, because a capture always starts on a temporary vault. It is shown `isPermanent`, so
+ * unlike the rename notice it never clears itself.
+ *
+ * **On a phone it does not merely overlap a corner, it DISPLACES the layout, which is why the desktop copy's
+ * reasoning is not simply inherited.** Measured on the 2026-09-20 run that last rewrote these two frames: in
+ * shot 1 the notice covered the panel title and the *Renames and moves* heading and pushed the rows down far
+ * enough that *Should delete conflicting attachments* left the frame, under a caption promising every option
+ * in one place; in shot 2 the note was gone from the frame altogether, leaving the rename notice, this one
+ * below it, and black, under a caption promising a link that follows a rename. A 900-pixel-wide frame has no
+ * corner to spare.
+ *
+ * So `beforeAll` dismisses it, exactly as clicking it would, and both shots assert it did not come back.
+ */
+const FIRST_LOAD_NOTICE_TEXT = 'doing nothing yet';
 
 const IMAGES_DIRECTORY = join(process.cwd(), 'images', 'screenshots');
 
@@ -91,9 +118,20 @@ const SYNC_TIMEOUT_IN_MILLISECONDS = 60_000;
 beforeAll(async () => {
   const vault = getTemporaryVault();
 
+  /*
+   * NEITHER staged note carries an H1, and that is the composition rather than an oversight. Obsidian's
+   * inline title already renders the basename above the editor, so a `# Chapter one` line is a second copy
+   * of it one line lower — which shot 2, photographed on this source note, showed as `Chapter one` stacked
+   * on `Chapter one`, and which reads to a store visitor as a rendering bug in this plugin. The desktop
+   * suite stages its own pair and dropped the same two headings for the same reason; there the repeat was
+   * invisible until `blurEditor` took the caret out of the frame, because Live Preview keeps the raw `#`
+   * visible beside a caret on that line. Nothing equivalent is done here and nothing needs to be: a mobile
+   * frame has no caret in it, so the two lines rendered identically in every device capture this suite has
+   * produced. The subject of the frame is the rewritten link, not a heading.
+   */
   vault.populate({
-    [SOURCE_NOTE_PATH]: '# Chapter one\n\nIt continues in [Chapter two](<./Chapter two.md>).\n',
-    [TARGET_NOTE_PATH]: '# Chapter two\n\nThe note the link points at.\n'
+    [SOURCE_NOTE_PATH]: 'It continues in [Chapter two](<./Chapter two.md>).\n',
+    [TARGET_NOTE_PATH]: 'The note the link points at.\n'
   });
   await vault.syncToDevice();
 
@@ -127,6 +165,15 @@ beforeAll(async () => {
       // Otherwise Obsidian asks for confirmation through a modal, which a capture run cannot answer.
       app.vault.setConfig('alwaysUpdateLinks', true);
 
+      /*
+       * Every notice the load put on screen, which on a fresh vault is the permanent first-load one. Removed
+       * rather than waited out: it has no timeout to wait out. The settle below doubles as its repaint, so
+       * this costs the closure no extra budget, and both shots assert the frame is clear afterwards.
+       */
+      for (const noticeEl of document.querySelectorAll('.notice')) {
+        noticeEl.remove();
+      }
+
       await sleep(SETTLE_DELAY_IN_MILLISECONDS);
     },
     vaultPath: vaultPath()
@@ -138,6 +185,12 @@ describe('mobile store screenshots', () => {
     const probe = await openSettingsTab();
 
     expect(probe.settingNames).toContain('Should handle renames');
+
+    /*
+     * Nothing is toasting over the panel. Stricter than "not the first-load notice" on purpose: this frame is
+     * the settings tab and nothing else, so ANY notice in it is a frame the caption does not describe.
+     */
+    expect(probe.noticeText).toBe('');
     await shoot(1, 'Every rename and delete option, in one place');
   });
 
@@ -146,6 +199,17 @@ describe('mobile store screenshots', () => {
 
     expect(probe.noticeText).toContain('Updated');
     expect(probe.linkTextAfter).toContain('renamed');
+
+    // And the rename notice is the ONLY one — the first-load toast stacked directly under it in this frame.
+    expect(probe.noticeText).not.toContain(FIRST_LOAD_NOTICE_TEXT);
+
+    /*
+     * The rewritten link has to be BEHIND the notice, or the frame is a toast over nothing and the caption is
+     * unsupported. Nothing else here checks what the capture is pointed at: the rename would still succeed,
+     * and every assertion above would still pass, with no note on screen at all — which is precisely the
+     * frame the 2026-09-20 run produced.
+     */
+    expect(probe.activeFilePath).toBe(SOURCE_NOTE_PATH);
     await shoot(2, 'Rename a note and every link to it follows');
   });
 });
@@ -190,6 +254,7 @@ async function openSettingsTab(): Promise<SettingsProbe> {
       await sleep(SETTLE_DELAY_IN_MILLISECONDS);
 
       return {
+        noticeText: [...document.querySelectorAll('.notice')].map((notice) => notice.textContent).join(' '),
         settingNames: [...document.querySelectorAll('.setting-item-name')].map((name) => name.textContent)
       };
     },
@@ -261,6 +326,7 @@ async function renameTargetAndReadResult(): Promise<RenameProbe> {
       await sleep(SETTLE_DELAY_IN_MILLISECONDS);
 
       return {
+        activeFilePath: app.workspace.getActiveFile()?.path ?? null,
         linkTextAfter: await app.vault.read(source),
         noticeText: [...document.querySelectorAll('.notice')].map((notice) => notice.textContent).join(' ')
       };
