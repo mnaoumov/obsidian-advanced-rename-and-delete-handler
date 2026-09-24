@@ -74,7 +74,6 @@ import {
   updateLinksInFile
 } from 'obsidian-dev-utils/obsidian/link';
 import {
-  getBacklinksForFileSafe,
   getLinks,
   registerFileCacheForNonExistingFile,
   registerFiles
@@ -212,6 +211,7 @@ export interface RescueDestination {
 interface DeleteHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
+  readonly backlinkIndex: BacklinkIndex;
   readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
   readonly file: TAbstractFile;
   readonly pluginNoticeComponent: PluginNoticeComponent;
@@ -221,6 +221,7 @@ interface DeleteHandlerConstructorParams {
 
 interface DeleteProtectionPatchComponentConstructorParams {
   readonly app: App;
+  readonly backlinkIndex: BacklinkIndex;
   readonly pluginNoticeComponent: PluginNoticeComponent;
   readonly rescueDecisionScope: RescueDecisionScope;
   readonly settingsManager: SettingsManager;
@@ -242,7 +243,7 @@ interface FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams {
 }
 
 interface FindSurvivingNotePathsParams {
-  readonly app: App;
+  readonly backlinkIndex: BacklinkIndex;
   readonly deletedNotePaths: Iterable<string>;
   readonly file: TFile;
 }
@@ -325,6 +326,7 @@ interface RenameMapInitBacklinksMapParams {
 
 interface RescueStillUsedUnitFoldersParams {
   readonly app: App;
+  readonly backlinkIndex: BacklinkIndex;
   readonly deletedNotePaths: Iterable<string>;
   readonly pluginNoticeComponent: PluginNoticeComponent;
   readonly rescueDecisionScope: RescueDecisionScope;
@@ -336,6 +338,7 @@ interface RescueStillUsedUnitFoldersParams {
 class DeleteHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
+  private readonly backlinkIndex: BacklinkIndex;
   private readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
   private readonly file: TAbstractFile;
   private readonly pluginNoticeComponent: PluginNoticeComponent;
@@ -344,6 +347,7 @@ class DeleteHandler {
 
   public constructor(params: DeleteHandlerConstructorParams) {
     this.app = params.app;
+    this.backlinkIndex = params.backlinkIndex;
     this.file = params.file;
     this.abortSignal = params.abortSignal;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
@@ -449,6 +453,7 @@ class DeleteHandler {
      */
     await rescueStillUsedUnitFolders({
       app: this.app,
+      backlinkIndex: this.backlinkIndex,
       deletedNotePaths: [this.file.path],
       pluginNoticeComponent: this.pluginNoticeComponent,
       rescueDecisionScope: this.rescueDecisionScope,
@@ -500,6 +505,7 @@ class DeleteHandler {
  */
 class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
   private readonly app: App;
+  private readonly backlinkIndex: BacklinkIndex;
   private readonly pluginNoticeComponent: PluginNoticeComponent;
 
   /**
@@ -518,6 +524,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
   public constructor(params: DeleteProtectionPatchComponentConstructorParams) {
     super();
     this.app = params.app;
+    this.backlinkIndex = params.backlinkIndex;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.rescueDecisionScope = params.rescueDecisionScope;
     this.settingsManager = params.settingsManager;
@@ -593,7 +600,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
 
     for (const candidateFile of candidateFiles) {
       const survivingNotePaths = await findSurvivingNotePaths({
-        app: this.app,
+        backlinkIndex: this.backlinkIndex,
         deletedNotePaths,
         file: candidateFile
       });
@@ -665,6 +672,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
        */
       await rescueStillUsedUnitFolders({
         app: this.app,
+        backlinkIndex: this.backlinkIndex,
         deletedNotePaths,
         pluginNoticeComponent: this.pluginNoticeComponent,
         rescueDecisionScope: this.rescueDecisionScope,
@@ -1627,8 +1635,10 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
   protected readonly settingsManager: SettingsManager;
 
   /**
-   * Answers the rename path's backlink queries from the notes that could hold a backlink, instead of a
-   * whole-vault walk per query. See `src/backlink-index.ts`.
+   * Answers this handler's own backlink queries — the rename path's, and the delete path's surviving-note
+   * lookups — from the notes that could hold a backlink, instead of a whole-vault walk per query. See
+   * `src/backlink-index.ts`. The library's `deleteIfNotUsed` still walks per file it visits, because it
+   * calls the library helper from inside, where this index cannot be substituted.
    */
   private readonly backlinkIndex: BacklinkIndex;
 
@@ -1676,6 +1686,7 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     this.addChild(
       new DeleteProtectionPatchComponent({
         app: this.app,
+        backlinkIndex: this.backlinkIndex,
         pluginNoticeComponent: this.pluginNoticeComponent,
         rescueDecisionScope: this.rescueDecisionScope,
         settingsManager: this.settingsManager
@@ -1698,6 +1709,7 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
           await new DeleteHandler({
             abortSignal,
             app: this.app,
+            backlinkIndex: this.backlinkIndex,
             deletedMetadataCacheMap: this.deletedMetadataCacheMap,
             file,
             pluginNoticeComponent: this.pluginNoticeComponent,
@@ -1939,7 +1951,7 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
  * @returns The paths of the notes that keep the file alive. Empty means the file is free to go.
  */
 async function findSurvivingNotePaths(params: FindSurvivingNotePathsParams): Promise<string[]> {
-  const backlinks = await getBacklinksForFileSafe({ app: params.app, pathOrFile: params.file });
+  const backlinks = await params.backlinkIndex.getBacklinksForFileSafe(params.file);
   for (const deletedNotePath of params.deletedNotePaths) {
     backlinks.clear(deletedNotePath);
   }
@@ -2043,7 +2055,7 @@ async function rescueStillUsedUnitFolders(params: RescueStillUsedUnitFoldersPara
     }
 
     const survivingNotePaths = await findSurvivingNotePaths({
-      app: params.app,
+      backlinkIndex: params.backlinkIndex,
       deletedNotePaths: params.deletedNotePaths,
       file: candidateFile
     });
