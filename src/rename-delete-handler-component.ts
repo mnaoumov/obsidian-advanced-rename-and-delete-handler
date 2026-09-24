@@ -74,7 +74,6 @@ import {
   updateLinksInFile
 } from 'obsidian-dev-utils/obsidian/link';
 import {
-  getBacklinksForFileOrPath,
   getBacklinksForFileSafe,
   getLinks,
   registerFileCacheForNonExistingFile,
@@ -101,6 +100,7 @@ import {
 
 import type { UnitFolderMove } from './unit-folder-rescue.ts';
 
+import { BacklinkIndex } from './backlink-index.ts';
 import { pluralize } from './pluralize.ts';
 import { RescueDecisionScope } from './rescue-decision-scope.ts';
 import { planUnitFolderMove } from './unit-folder-rescue.ts';
@@ -282,6 +282,7 @@ interface RenameDeleteHandlerComponentConstructorParams {
 interface RenameHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
+  readonly backlinkIndex: BacklinkIndex;
   readonly handledRenames: HandledRenames;
   readonly interruptedCombinedBacklinksMap?: Map<string, Map<string, string>>;
   readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -298,6 +299,7 @@ interface RenameHandlerConstructorParams {
 interface RenameMapConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
+  readonly backlinkIndex: BacklinkIndex;
   readonly newPath: string;
   readonly oldCache: CachedMetadata | null;
   readonly oldPath: string;
@@ -799,9 +801,12 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * Narrowing the walk to the renamed subtree instead (reimplementing `runAsyncLinkUpdate`) was measured and
    * refused (2026-09-24, Obsidian 1.14.2): the walk costs ~115 ms at 100k references and ~320 ms at 250k, and
    * runs ONCE per `renameFile`, folder renames included - ~30% of a single note rename with this handler off,
-   * 2% of a 20-file folder rename with it on, 0.03% of a 1000-file one. What does scale is this handler's own
-   * `getBacklinksForFileOrPath` / `getBacklinksForFileSafe` per renamed file: Obsidian's `getBacklinksForFile`
-   * is the same full `iterateAllRefs` walk, taken twice per file, so a folder rename walks the vault 2F+1 times.
+   * 2% of a 20-file folder rename with it on, 0.03% of a 1000-file one. Those last two shares were measured
+   * while this handler still made two backlink lookups per renamed file through Obsidian's `getBacklinksForFile`,
+   * which is the same full `iterateAllRefs` walk, so a folder rename walked the vault 2F+1 times. The lookups now
+   * go through `BacklinkIndex` (`src/backlink-index.ts`), which resolves only the references of the notes that
+   * could hold a backlink, so this walk is the only one left in a rename and its share of one has grown
+   * accordingly. It is still one walk per `renameFile`.
    *
    * @param linkUpdates - The link updates Obsidian collected before invoking the handler.
    * @param linkUpdatesHandler - The original handler passed to {@link FileManager.runAsyncLinkUpdate}.
@@ -931,6 +936,7 @@ class MetadataDeletedHandler {
 class RenameHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
+  private readonly backlinkIndex: BacklinkIndex;
   private readonly handledRenames: HandledRenames;
   private readonly interruptedCombinedBacklinksMap: Map<string, Map<string, string>>;
   private readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -946,6 +952,7 @@ class RenameHandler {
   public constructor(params: RenameHandlerConstructorParams) {
     this.abortSignal = params.abortSignal;
     this.app = params.app;
+    this.backlinkIndex = params.backlinkIndex;
     this.resourceLockComponent = params.resourceLockComponent;
     this.handledRenames = params.handledRenames;
     this.interruptedCombinedBacklinksMap = params.interruptedCombinedBacklinksMap ?? new Map<string, Map<string, string>>();
@@ -1001,6 +1008,7 @@ class RenameHandler {
       const renameMap = new RenameMap({
         abortSignal: this.abortSignal,
         app: this.app,
+        backlinkIndex: this.backlinkIndex,
         newPath: this.newPath,
         oldCache: this.oldCache,
         oldPath: this.oldPath,
@@ -1027,7 +1035,7 @@ class RenameHandler {
           if (attachmentOldPath === this.oldPath) {
             continue;
           }
-          const attachmentOldPathBacklinks = await getBacklinksForFileSafe({ app: this.app, pathOrFile: attachmentOldPath });
+          const attachmentOldPathBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(attachmentOldPath);
           const attachmentOldPathBacklinksMap = attachmentOldPathBacklinks.data;
           this.abortSignal.throwIfAborted();
           renameMap.initBacklinksMap({
@@ -1187,6 +1195,7 @@ class RenameHandler {
         await new RenameHandler({
           abortSignal: this.abortSignal,
           app: this.app,
+          backlinkIndex: this.backlinkIndex,
           handledRenames: this.handledRenames,
           interruptedCombinedBacklinksMap: interruptedRename.combinedBacklinksMap,
           interruptedRenamesMap: this.interruptedRenamesMap,
@@ -1214,6 +1223,7 @@ class RenameHandler {
     await new RenameHandler({
       abortSignal: this.abortSignal,
       app: this.app,
+      backlinkIndex: this.backlinkIndex,
       handledRenames: this.handledRenames,
       interruptedRenamesMap: this.interruptedRenamesMap,
       linkUpdateProgressReporter: this.linkUpdateProgressReporter,
@@ -1235,7 +1245,7 @@ class RenameHandler {
     let oldPathBacklinksMapRefreshed: Map<string, Reference[]>;
     {
       using _registration = registerFiles(this.app, [fakeOldFile]);
-      const fakeOldFileBacklinks = await getBacklinksForFileSafe({ app: this.app, pathOrFile: fakeOldFile });
+      const fakeOldFileBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(fakeOldFile);
       oldPathBacklinksMapRefreshed = fakeOldFileBacklinks.data;
     }
 
@@ -1269,6 +1279,7 @@ class RenameHandler {
 class RenameMap {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
+  private readonly backlinkIndex: BacklinkIndex;
   private readonly map = new Map<string, string>();
   private readonly newPath: string;
   private readonly oldCache: CachedMetadata | null;
@@ -1279,6 +1290,7 @@ class RenameMap {
   public constructor(params: RenameMapConstructorParams) {
     this.abortSignal = params.abortSignal;
     this.app = params.app;
+    this.backlinkIndex = params.backlinkIndex;
     this.settingsManager = params.settingsManager;
     this.oldCache = params.oldCache;
     this.oldPath = params.oldPath;
@@ -1356,7 +1368,7 @@ class RenameMap {
         }
 
         if (isOldAttachmentFolderAtRoot || oldAttachmentFile.path.startsWith(oldAttachmentFolderPath)) {
-          const oldAttachmentBacklinks = await getBacklinksForFileSafe({ app: this.app, pathOrFile: oldAttachmentFile });
+          const oldAttachmentBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(oldAttachmentFile);
           this.abortSignal.throwIfAborted();
           const keys = new Set<string>(oldAttachmentBacklinks.keys());
           keys.delete(this.oldPath);
@@ -1539,6 +1551,12 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
    */
   protected readonly settingsManager: SettingsManager;
 
+  /**
+   * Answers the rename path's backlink queries from the notes that could hold a backlink, instead of a
+   * whole-vault walk per query. See `src/backlink-index.ts`.
+   */
+  private readonly backlinkIndex: BacklinkIndex;
+
   private readonly deletedMetadataCacheMap = new Map<string, CachedMetadata>();
 
   private readonly handledRenames = new HandledRenames();
@@ -1561,6 +1579,7 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.settingsBuilder = params.settingsBuilder;
     this.settingsManager = new SettingsManager(this.settingsBuilder);
+    this.backlinkIndex = new BacklinkIndex(this.app);
   }
 
   /**
@@ -1685,13 +1704,20 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     }
 
     const oldCache = this.app.metadataCache.getCache(oldPath) ?? this.app.metadataCache.getCache(newPath);
-    const oldPathBacklinksMap = getBacklinksForFileOrPath(this.app, oldPath).data;
+    /*
+     * Synchronous, inside the vault `rename` event, so a folder rename of F files runs F of these back to back
+     * before anything yields. Obsidian's `getBacklinksForFile` would make each one a whole-vault walk that
+     * resolves every reference; the index compares one hash per note and resolves only the references of the
+     * notes that could link here.
+     */
+    const oldPathBacklinksMap = this.backlinkIndex.getBacklinksForFileOrPath(oldPath).data;
     addToQueue({
       abortSignal: this.abortSignalComponent.abortSignal,
       operationFunction: (abortSignal) =>
         new RenameHandler({
           abortSignal,
           app: this.app,
+          backlinkIndex: this.backlinkIndex,
           handledRenames: this.handledRenames,
           interruptedRenamesMap: this.interruptedRenamesMap,
           linkUpdateProgressReporter: this.linkUpdateProgressReporter,

@@ -132,9 +132,11 @@ describe('bulk-deletion delete-handler bottleneck', () => {
 
     try {
       // Both bulk folders have to be in the index before anything is deleted, and a cold startup scan of them is genuinely a minute's work — so Node waits for it.
+      // Counted per folder, because the same vault also seeds the `rename-walk` suite's notes.
       const observedNoteCount = await pollInObsidian({
-        poll({ app }): number {
-          return app.vault.getMarkdownFiles().length;
+        input: { bulkFolders: [PERFORMANCE_VAULT_PRIMARY_FOLDER, PERFORMANCE_VAULT_BASELINE_FOLDER] },
+        poll({ app, bulkFolders }): number {
+          return app.vault.getMarkdownFiles().filter((file) => bulkFolders.some((folder) => file.path.startsWith(`${folder}/`))).length;
         },
         timeoutInMilliseconds: INDEX_WAIT_IN_MS,
         timeoutMessage: 'the vault did not index both bulk folders in time',
