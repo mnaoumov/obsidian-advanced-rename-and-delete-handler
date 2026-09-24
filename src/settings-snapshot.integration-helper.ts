@@ -66,13 +66,34 @@ interface MigrateSettingsResultLike {
   readonly isApplied: boolean;
 }
 
+interface ObsidianDevUtilsStateLike {
+  readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
+}
+
 interface PluginApiLike {
   getSettings: () => PluginSettingsSnapshot;
   migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
-interface PluginWithApiLike {
+/**
+ * The slice of the `obsidian-dev-utils` cross-plugin registry a closure reads the API from: the wire-level path
+ * that library's Plugin API protocol guide freezes, so a suite reaches the plugin the way a consumer does.
+ */
+interface PluginApiRegistryHostLike {
+  readonly __obsidianDevUtils?: ObsidianDevUtilsStateLike;
+}
+
+interface PluginApiRegistryLike {
+  readonly records?: Partial<Record<string, readonly PublishedPluginApiRecordLike[]>>;
+}
+
+interface PluginApiRegistryWrapperLike {
+  readonly value?: PluginApiRegistryLike;
+}
+
+interface PublishedPluginApiRecordLike {
   readonly api: PluginApiLike;
+  readonly isRevoked: boolean;
 }
 
 /**
@@ -85,24 +106,17 @@ interface PluginWithApiLike {
 export async function readPluginSettings(): Promise<PluginSettingsSnapshot> {
   return await evalInObsidian({
     callback({
-      app,
       pluginId
     }): PluginSettingsSnapshot {
-      const plugin = app.plugins.plugins[pluginId];
-      if (!plugin) {
-        throw new Error(`${pluginId} is not loaded`);
+      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+        ?.find((candidate) => !candidate.isRevoked);
+      if (!apiRecord) {
+        throw new Error(`${pluginId} has published no API`);
       }
 
-      // eslint-disable-next-line unicorn/consistent-function-scoping -- The callback is serialized by its source and evaluated inside Obsidian, so a helper hoisted out of it would not exist there.
-      function hasApi(candidate: object): candidate is PluginWithApiLike {
-        return 'api' in candidate;
-      }
+      const api = apiRecord.api;
 
-      if (!hasApi(plugin)) {
-        throw new Error(`${pluginId} exposes no API`);
-      }
-
-      return plugin.api.getSettings();
+      return api.getSettings();
     },
     input: { pluginId: PLUGIN_ID }
   });
@@ -121,26 +135,19 @@ export async function readPluginSettings(): Promise<PluginSettingsSnapshot> {
 export async function writePluginSettings(snapshot: PluginSettingsSnapshot): Promise<void> {
   await evalInObsidian({
     async callback({
-      app,
       lib: { waitUntil },
       pluginId,
       proposedSettings,
       sourcePluginId,
       waitTimeoutInMilliseconds
     }): Promise<void> {
-      const plugin = app.plugins.plugins[pluginId];
-      if (!plugin) {
-        throw new Error(`${pluginId} is not loaded`);
+      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+        ?.find((candidate) => !candidate.isRevoked);
+      if (!apiRecord) {
+        throw new Error(`${pluginId} has published no API`);
       }
 
-      // eslint-disable-next-line unicorn/consistent-function-scoping -- The callback is serialized by its source and evaluated inside Obsidian, so a helper hoisted out of it would not exist there.
-      function hasApi(candidate: object): candidate is PluginWithApiLike {
-        return 'api' in candidate;
-      }
-
-      if (!hasApi(plugin)) {
-        throw new Error(`${pluginId} exposes no API`);
-      }
+      const api = apiRecord.api;
 
       /*
        * A modal already on screen is one a failing test left open. Proposing over it would find THAT dialog
@@ -152,7 +159,7 @@ export async function writePluginSettings(snapshot: PluginSettingsSnapshot): Pro
         throw new Error('a modal was left open by a failing test, so the settings snapshot was not restored');
       }
 
-      const migrationPromise = plugin.api.migrateSettings({
+      const migrationPromise = api.migrateSettings({
         proposedSettings,
         sourcePluginId
       });

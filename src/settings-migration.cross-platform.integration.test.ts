@@ -58,14 +58,35 @@ interface MigrationApiLike {
   migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
-interface PluginWithApiLike {
-  readonly api: MigrationApiLike;
+interface ObsidianDevUtilsStateLike {
+  readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
+}
+
+/**
+ * The slice of the `obsidian-dev-utils` cross-plugin registry a closure reads the API from: the wire-level path
+ * that library's Plugin API protocol guide freezes, so a suite reaches the plugin the way a consumer does.
+ */
+interface PluginApiRegistryHostLike {
+  readonly __obsidianDevUtils?: ObsidianDevUtilsStateLike;
+}
+
+interface PluginApiRegistryLike {
+  readonly records?: Partial<Record<string, readonly PublishedPluginApiRecordLike[]>>;
+}
+
+interface PluginApiRegistryWrapperLike {
+  readonly value?: PluginApiRegistryLike;
 }
 
 interface ProposedSettingsLike {
   readonly notePriorities?: readonly string[];
   readonly shouldHandleDeletions?: boolean;
   readonly shouldRenameAttachmentFiles?: boolean;
+}
+
+interface PublishedPluginApiRecordLike {
+  readonly api: MigrationApiLike;
+  readonly isRevoked: boolean;
 }
 
 interface SettingsMigrationProbeResult {
@@ -107,15 +128,13 @@ describe('A consumer plugin proposing its rename/delete settings', () => {
           throw new Error(`${pluginId} is not loaded`);
         }
 
-        function hasApi(candidate: object): candidate is PluginWithApiLike {
-          return 'api' in candidate;
+        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+          ?.find((candidate) => !candidate.isRevoked);
+        if (!apiRecord) {
+          throw new Error(`${pluginId} has published no API`);
         }
 
-        if (!hasApi(plugin)) {
-          throw new Error(`${pluginId} exposes no API`);
-        }
-
-        const api = plugin.api;
+        const api = apiRecord.api;
 
         /*
          * The two rows this case expects exist only because both values differ from what the plugin holds.
@@ -229,15 +248,13 @@ describe('A consumer plugin proposing its rename/delete settings', () => {
           throw new Error(`${pluginId} is not loaded`);
         }
 
-        function hasApi(candidate: object): candidate is PluginWithApiLike {
-          return 'api' in candidate;
+        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+          ?.find((candidate) => !candidate.isRevoked);
+        if (!apiRecord) {
+          throw new Error(`${pluginId} has published no API`);
         }
 
-        if (!hasApi(plugin)) {
-          throw new Error(`${pluginId} exposes no API`);
-        }
-
-        const api = plugin.api;
+        const api = apiRecord.api;
 
         // The one row this case cancels exists only because the proposed value differs from the held one.
         const currentSettings = api.getSettings();

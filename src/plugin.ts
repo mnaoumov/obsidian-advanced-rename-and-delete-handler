@@ -11,7 +11,6 @@ import { PluginDataHandler } from 'obsidian-dev-utils/obsidian/data-handler';
 import { PluginBase } from 'obsidian-dev-utils/obsidian/plugin/plugin';
 import { PluginEventSourceImpl } from 'obsidian-dev-utils/obsidian/plugin/plugin-event-source';
 
-import type { AdvancedRenameAndDeleteHandlerApi } from './plugin-api.ts';
 import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
 
 import { DeleteEmptyFoldersCommandHandler } from './command-handlers/delete-empty-folders-command-handler.ts';
@@ -103,19 +102,6 @@ const RENAME_DELETE_HANDLER_OWNERS: readonly RenameDeleteHandlerOwner[] = [
 ];
 
 export class Plugin extends PluginBase {
-  /**
-   * This plugin's public API, or `null` before it has loaded — or while a blocking conflict is holding its
-   * feature surface shut.
-   *
-   * The registry — `watchPluginApi` from `obsidian-dev-utils` — is the path a consumer should take: it
-   * negotiates the contract version, waits out the load order and revokes the handle when this plugin
-   * unloads. This field is the plain fallback for a consumer that cannot depend on a library version new
-   * enough to have the registry.
-   */
-  public get api(): AdvancedRenameAndDeleteHandlerApi | null {
-    return this.pluginApi;
-  }
-
   private pluginApi: null | PluginApiImpl = null;
 
   /**
