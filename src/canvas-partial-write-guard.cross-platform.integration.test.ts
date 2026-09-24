@@ -28,8 +28,8 @@ import {
  * whether it is complete.
  *
  * What this proves end to end: the rename completes, still relocates the embedded attachment, and THIS PLUGIN
- * never writes the canvas — which is the guard holding — while the canvas keeps exactly the data it was
- * written with. The `{}`-shaped transient Advanced Canvas leaves mid-initialization cannot be staged
+ * never writes the canvas — which is the guard holding — while the canvas keeps the data it was written with,
+ * its file node at most re-pointed at the moved attachment by Obsidian itself. The `{}`-shaped transient Advanced Canvas leaves mid-initialization cannot be staged
  * headlessly; that half is the second, deliberately skipped case below.
  *
  * Why "this plugin never writes it" rather than "the file is byte-identical", which is what this suite used
@@ -41,8 +41,8 @@ import {
  * that was a coin toss — the index usually lagged, so the file stayed byte-identical and the suite passed, and
  * about one desktop aggregate in three it did not, which read as a `flushQueue` ordering race. It was not one:
  * waiting for the index first, as the case below now does, fails the byte-identity assertion every time. A
- * canvas in a real vault is always indexed, so Obsidian's rewrite is the ordinary case, and on desktop the suite
- * now stages it deliberately. Why only on desktop is explained where the index is waited for.
+ * canvas in a real vault is always indexed, so Obsidian's rewrite is the ordinary case, and the suite
+ * now stages it deliberately.
  *
  * Ported from `obsidian-custom-attachment-location`, which deleted the suite when it stopped registering a
  * rename/delete handler. Rewritten rather than copied: the original assigned to a settings object it found by
@@ -62,6 +62,8 @@ interface CanvasGuardResult {
   readonly hasAttachmentAtNewPath: boolean;
   readonly hasAttachmentAtOldPath: boolean;
   readonly movedCanvasContent: string;
+  readonly newAttachmentPath: string;
+  readonly oldAttachmentPath: string;
   readonly originalCanvasContent: string;
   readonly pluginCanvasWriteStacks: readonly string[];
 }
@@ -226,6 +228,7 @@ describe('Moving a partial canvas', () => {
         }
 
         const originalAttachmentFolderPath = app.vault.getConfig('attachmentFolderPath');
+        const originalAlwaysUpdateLinks = app.vault.getConfig('alwaysUpdateLinks');
 
         /*
          * Every write that reaches the canvas is recorded with the stack it was made from, and the ones made
@@ -288,6 +291,14 @@ describe('Moving a partial canvas', () => {
         // Everything that mutates shared state sits inside the `try`, so the `finally` below puts the vault back however this ends.
         try {
           app.vault.setConfig('attachmentFolderPath', './assets');
+          /*
+           * The handler hands the canvas's link update back to Obsidian's `updateAllLinks`, which with this off
+           * opens its "Update links" confirmation and waits for an answer nobody headless gives — the attachment's
+           * `renameFile` then never returns and this plugin's queue is held behind it. The harness turns it on for
+           * every run, but the Android transport of the `obsidian-integration-testing` release in use here loses
+           * that default before the vault opens, so it is set here, as the sibling suites do.
+           */
+          app.vault.setConfig('alwaysUpdateLinks', true);
 
           await applySettings({
             shouldHandleRenames: true,
@@ -322,26 +333,17 @@ describe('Moving a partial canvas', () => {
            * The state every real canvas is in: already indexed by Obsidian, which is what makes its native link
            * updater rewrite the file when the attachment moves. Renaming before the index caught up is what
            * made this suite's outcome depend on timing; see the header.
-           *
-           * Desktop only, and not by choice. On Android the same staging never finishes: Obsidian's own
-           * `fileManager.updateAllLinks` rewrites the indexed partial canvas and then never resolves, so the
-           * attachment's `renameFile` never returns and this plugin's queue is held behind it — measured
-           * 2026-09-24, a stall inside Obsidian's link updater, not in this plugin. The assertions below hold
-           * whichever state the canvas is in, so on Android the suite still checks the guard, on whichever path
-           * the index timing gives it.
            */
-          if (!app.isMobile) {
-            const canvasIndex = app.internalPlugins.getPluginById('canvas')?.instance.index;
-            if (!canvasIndex) {
-              throw new Error('the Canvas core plugin is not enabled');
-            }
-
-            await waitUntil({
-              message: 'Obsidian\'s canvas index holds the canvas and its file node',
-              predicate: () => (canvasIndex.index[SRC_CANVAS]?.embeds.length ?? 0) > 0,
-              timeoutInMilliseconds: INDEX_TIMEOUT_IN_MILLISECONDS
-            });
+          const canvasIndex = app.internalPlugins.getPluginById('canvas')?.instance.index;
+          if (!canvasIndex) {
+            throw new Error('the Canvas core plugin is not enabled');
           }
+
+          await waitUntil({
+            message: 'Obsidian\'s canvas index holds the canvas and its file node',
+            predicate: () => (canvasIndex.index[SRC_CANVAS]?.embeds.length ?? 0) > 0,
+            timeoutInMilliseconds: INDEX_TIMEOUT_IN_MILLISECONDS
+          });
 
           await app.fileManager.renameFile(canvas, DST_CANVAS);
 
@@ -379,6 +381,8 @@ describe('Moving a partial canvas', () => {
             hasAttachmentAtNewPath: app.vault.getAbstractFileByPath(DST_ATTACHMENT) !== null,
             hasAttachmentAtOldPath: app.vault.getAbstractFileByPath(SRC_ATTACHMENT) !== null,
             movedCanvasContent: await app.vault.read(movedCanvas),
+            newAttachmentPath: DST_ATTACHMENT,
+            oldAttachmentPath: SRC_ATTACHMENT,
             originalCanvasContent: partialCanvasContent,
             pluginCanvasWriteStacks
           };
@@ -387,6 +391,7 @@ describe('Moving a partial canvas', () => {
             removeWriteObserver();
           }
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+          app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
           // Back to the defaults declared in `src/plugin-settings.ts`, so the next suite starts where this one found things.
           await applySettings({
             shouldHandleRenames: true,
@@ -423,12 +428,17 @@ describe('Moving a partial canvas', () => {
     expect(result.pluginCanvasWriteStacks).toEqual([]);
 
     /*
-     * And the canvas holds exactly the data it was written with: no `edges` array invented, the file node
-     * untouched. Compared as parsed data rather than as bytes, because Obsidian's own link updater
-     * re-serializes it in its own format — see the header.
+     * And the canvas holds the data it was written with: no `edges` array invented, no node added or dropped.
+     * Compared as parsed data rather than as bytes, because Obsidian's own link updater re-serializes it in its
+     * own format — see the header. The one field allowed to differ is the file node's path, and only by naming
+     * the attachment's new home: Obsidian's canvas plugin re-points a file node at a moved file itself, on its
+     * own schedule, so whether that has landed by the time the file is read is timing. Measured 2026-09-24 on
+     * Android, where it landed in one run of two; the write assertion above already proved it was not this
+     * plugin's write.
      */
     const parsedCanvas = JSON.parse(result.movedCanvasContent) as CanvasNodesProbe;
-    expect(parsedCanvas).toEqual(JSON.parse(result.originalCanvasContent));
+    const updatedFileNodeCanvasContent = result.originalCanvasContent.split(result.oldAttachmentPath).join(result.newAttachmentPath);
+    expect([JSON.parse(result.originalCanvasContent), JSON.parse(updatedFileNodeCanvasContent)]).toContainEqual(parsedCanvas);
 
     // Which leaves it a canvas Obsidian's renderer can still read: parseable, and carrying its nodes array.
     expect(Array.isArray(parsedCanvas.nodes)).toBe(true);
