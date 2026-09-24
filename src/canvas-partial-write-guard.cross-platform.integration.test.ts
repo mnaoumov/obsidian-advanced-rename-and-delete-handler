@@ -292,11 +292,12 @@ describe('Moving a partial canvas', () => {
         try {
           app.vault.setConfig('attachmentFolderPath', './assets');
           /*
-           * The handler hands the canvas's link update back to Obsidian's `updateAllLinks`, which with this off
-           * opens its "Update links" confirmation and waits for an answer nobody headless gives — the attachment's
-           * `renameFile` then never returns and this plugin's queue is held behind it. The harness turns it on for
-           * every run, but the Android transport of the `obsidian-integration-testing` release in use here loses
-           * that default before the vault opens, so it is set here, as the sibling suites do.
+           * The handler hands the canvas's link update back to Obsidian's `updateAllLinks`. With this setting off,
+           * that call would open its "Update links" confirmation, but the handler now answers it for every canvas
+           * entry it hands back (`canvas-link-update-prompt` pins that). The setting stays on here so this suite
+           * measures the guard alone, under the value the harness intends. The Android transport of the
+           * `obsidian-integration-testing` release in use here loses that default before the vault opens, so it is
+           * set here, as the sibling suites do.
            */
           app.vault.setConfig('alwaysUpdateLinks', true);
 
