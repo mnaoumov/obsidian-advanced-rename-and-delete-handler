@@ -62,6 +62,29 @@ export const RENAME_WALK_MOVED_NOTE_COUNT = 40;
 export const RENAME_WALK_HOLDER_COUNT = 5;
 
 /**
+ * Root of the `delete-walk` suite's fixture. Kept apart from the two bulk-delete folders, which that suite counts
+ * by folder.
+ */
+export const DELETE_WALK_ROOT_FOLDER = 'delete-walk';
+
+/**
+ * The folder the `delete-walk` suite deletes: {@link DELETE_WALK_ATTACHMENT_COUNT} attachments a note outside it
+ * embeds, plus one attachment nothing embeds.
+ */
+export const DELETE_WALK_DELETED_FOLDER = `${DELETE_WALK_ROOT_FOLDER}/deleted`;
+
+/**
+ * How many embedded attachments the deleted folder holds: A in "a folder delete of A attachments". Large enough
+ * that walks proportional to it cannot pass for a constant.
+ */
+export const DELETE_WALK_ATTACHMENT_COUNT = 20;
+
+/**
+ * The note outside the deleted folder that embeds every attachment in it, so each is still used and survives.
+ */
+const DELETE_WALK_HOLDER = `${DELETE_WALK_ROOT_FOLDER}/holder.md`;
+
+/**
  * How many unrelated notes, {@link RENAME_WALK_BACKGROUND_LINKS_PER_NOTE} links each, surround the renamed folder, so a whole-vault walk costs something
  * and the vault is not trivially small.
  */
@@ -126,6 +149,16 @@ export function generatePerformanceVault(): PopulateFilesParams {
   for (let holderIndex = 0; holderIndex < RENAME_WALK_HOLDER_COUNT; holderIndex++) {
     files[`${RENAME_WALK_HOLDERS_FOLDER}/holder-${String(holderIndex)}.md`] = `${holderLinks.join('\n')}\n`;
   }
+
+  const holderEmbeds: string[] = [];
+  for (let attachmentIndex = 0; attachmentIndex < DELETE_WALK_ATTACHMENT_COUNT; attachmentIndex++) {
+    const attachmentPath = `${DELETE_WALK_DELETED_FOLDER}/attachment-${String(attachmentIndex)}.png`;
+    files[attachmentPath] = 'not really a png';
+    holderEmbeds.push(`![[${attachmentPath}]]`);
+  }
+  // Nothing embeds this one, so a walk that visits every child deletes it.
+  files[`${DELETE_WALK_DELETED_FOLDER}/unused.png`] = 'not really a png';
+  files[DELETE_WALK_HOLDER] = `${holderEmbeds.join('\n')}\n`;
 
   return files;
 }
