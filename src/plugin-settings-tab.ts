@@ -281,11 +281,19 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
         items: [
           this.settingEx({
             desc: createFragment((f) => {
-              f.appendText('Files with these extensions are attachments even though their extension says otherwise.');
+              f.appendText('Files matching these entries are attachments even though their extension says otherwise.');
               f.createEl('br');
-              f.appendText('Insert each extension on a new line, e.g. ');
+              f.appendText('Insert each entry on a new line. An entry is an extension such as ');
               appendCodeBlock(f, '.excalidraw.md');
-              f.appendText(' for a drawing that is stored as markdown.');
+              f.appendText(', or a ');
+              appendCodeBlock(f, 'property:name');
+              f.appendText(' or ');
+              appendCodeBlock(f, 'property:name=value');
+              f.appendText(' frontmatter match such as ');
+              appendCodeBlock(f, 'property:excalidraw-plugin');
+              f.appendText(', which is how Excalidraw marks a drawing stored as markdown.');
+              f.createEl('br');
+              f.appendText('A property entry matches a markdown file only once Obsidian has indexed it.');
             }),
             name: 'Treat as attachment extensions',
             render: (setting) => {

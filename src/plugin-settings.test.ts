@@ -37,8 +37,8 @@ describe('PluginSettings', () => {
       expect(settings.emptyFolderBehavior).toBe(EmptyFolderBehavior.Keep);
     });
 
-    it('should treat .excalidraw.md as an attachment', () => {
-      expect(new PluginSettings().treatAsAttachmentExtensions).toEqual(['.excalidraw.md']);
+    it('should treat an Excalidraw drawing as an attachment, by extension and by property', () => {
+      expect(new PluginSettings().treatAsAttachmentExtensions).toEqual(['.excalidraw.md', 'property:excalidraw-plugin']);
     });
 
     it('should have an empty note priority list', () => {
@@ -81,24 +81,6 @@ describe('PluginSettings', () => {
 
       expect(settings.excludePaths).toEqual(['a']);
       expect(settings.includePaths).toEqual(['b']);
-    });
-  });
-
-  describe('isTreatedAsAttachment', () => {
-    it('should treat a configured extension as an attachment', () => {
-      expect(new PluginSettings().isTreatedAsAttachment('drawing.excalidraw.md')).toBe(true);
-    });
-
-    it('should leave an ordinary note alone', () => {
-      expect(new PluginSettings().isTreatedAsAttachment('note.md')).toBe(false);
-    });
-
-    it('should honour a replaced extension list', () => {
-      const settings = new PluginSettings();
-      settings.treatAsAttachmentExtensions = ['.canvas.md'];
-
-      expect(settings.isTreatedAsAttachment('board.canvas.md')).toBe(true);
-      expect(settings.isTreatedAsAttachment('drawing.excalidraw.md')).toBe(false);
     });
   });
 });

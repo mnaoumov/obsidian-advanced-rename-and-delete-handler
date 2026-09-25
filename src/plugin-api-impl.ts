@@ -101,13 +101,14 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
   }
 
   /**
-   * Whether the path names an attachment even though its extension says otherwise.
+   * Whether the path names an attachment even though its extension says otherwise, by an extension entry
+   * or by a `property:` entry matching its frontmatter.
    *
    * @param path - The path to test, from the vault root.
    * @returns `true` when the path is treated as an attachment.
    */
   public isTreatedAsAttachment(path: string): boolean {
-    return this.pluginSettingsComponent.settings.isTreatedAsAttachment(path);
+    return this.pluginSettingsComponent.isTreatedAsAttachment(path);
   }
 
   /**

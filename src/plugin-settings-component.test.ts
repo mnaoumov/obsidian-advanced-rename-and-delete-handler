@@ -56,7 +56,7 @@ describe('PluginSettingsComponent', () => {
     const settings = createComponent().defaultSettings;
 
     expect(settings.shouldHandleRenames).toBe(false);
-    expect(settings.treatAsAttachmentExtensions).toEqual(['.excalidraw.md']);
+    expect(settings.treatAsAttachmentExtensions).toEqual(['.excalidraw.md', 'property:excalidraw-plugin']);
   });
 
   describe('ensureDataFileExists', () => {
@@ -132,6 +132,49 @@ describe('PluginSettingsComponent', () => {
        * this method exists rather than calling the library's `isNote` directly.
        */
       expect(createComponent().isNoteEx('drawing.excalidraw.md')).toBe(false);
+    });
+
+    it('should reject a plain markdown drawing marked by its excalidraw-plugin property', async () => {
+      await app.vault.create('drawing.md', '');
+      vi.spyOn(app.metadataCache, 'getFileCache').mockReturnValue({ frontmatter: { 'excalidraw-plugin': 'parsed' } });
+
+      expect(createComponent().isNoteEx('drawing.md')).toBe(false);
+    });
+  });
+
+  describe('isTreatedAsAttachment', () => {
+    it('should match an extension entry', () => {
+      expect(createComponent().isTreatedAsAttachment('drawing.excalidraw.md')).toBe(true);
+    });
+
+    it('should match a property entry against the cached frontmatter', async () => {
+      await app.vault.create('drawing.md', '');
+      vi.spyOn(app.metadataCache, 'getFileCache').mockReturnValue({ frontmatter: { 'excalidraw-plugin': 'parsed' } });
+
+      expect(createComponent().isTreatedAsAttachment('drawing.md')).toBe(true);
+    });
+
+    it('should leave a markdown file without the property a note', async () => {
+      await app.vault.create('note.md', '');
+      vi.spyOn(app.metadataCache, 'getFileCache').mockReturnValue({ frontmatter: { tags: ['a'] } });
+
+      expect(createComponent().isTreatedAsAttachment('note.md')).toBe(false);
+    });
+
+    // The cold-cache answer: a drawing Obsidian has not indexed yet stays a note, the side that moves less.
+    it('should leave a markdown file the cache has not read yet a note', async () => {
+      await app.vault.create('drawing.md', '');
+      vi.spyOn(app.metadataCache, 'getFileCache').mockReturnValue(null);
+
+      expect(createComponent().isTreatedAsAttachment('drawing.md')).toBe(false);
+    });
+
+    it('should honour a property entry with a value', async () => {
+      await app.vault.create('drawing.md', '');
+      vi.spyOn(app.metadataCache, 'getFileCache').mockReturnValue({ frontmatter: { 'excalidraw-plugin': 'raw' } });
+      const component = await loadComponent({ treatAsAttachmentExtensions: ['property:excalidraw-plugin=parsed'] });
+
+      expect(component.isTreatedAsAttachment('drawing.md')).toBe(false);
     });
   });
 });

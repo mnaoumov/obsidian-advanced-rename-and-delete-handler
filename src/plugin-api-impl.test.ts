@@ -98,7 +98,7 @@ describe('PluginApiImpl.migrateSettings', () => {
       // Both already hold these values, so there is nothing to review.
       proposedSettings: {
         shouldHandleRenames: false,
-        treatAsAttachmentExtensions: ['.excalidraw.md']
+        treatAsAttachmentExtensions: ['.excalidraw.md', 'property:excalidraw-plugin']
       },
       sourcePluginId: SOURCE_PLUGIN_ID
     });
@@ -184,7 +184,7 @@ describe('PluginApiImpl.getSettings', () => {
       shouldRenameAttachmentFolder: false,
       shouldRescueSharedAttachments: false,
       shouldUpdateFileNameAliases: true,
-      treatAsAttachmentExtensions: ['.excalidraw.md']
+      treatAsAttachmentExtensions: ['.excalidraw.md', 'property:excalidraw-plugin']
     });
   });
 
@@ -210,7 +210,7 @@ describe('PluginApiImpl.getSettings', () => {
     castTo<string[]>(handedOver.treatAsAttachmentExtensions).push('.foo.md');
 
     expect(settings.excludePaths).toEqual(['Archive']);
-    expect(settings.treatAsAttachmentExtensions).toEqual(['.excalidraw.md']);
+    expect(settings.treatAsAttachmentExtensions).toEqual(['.excalidraw.md', 'property:excalidraw-plugin']);
     expect(pluginApi.getSettings().excludePaths).toEqual(['Archive']);
   });
 });
@@ -248,18 +248,14 @@ describe('PluginApiImpl.isPathIgnored', () => {
 });
 
 describe('PluginApiImpl.isTreatedAsAttachment', () => {
-  it('treats a drawing as an attachment and a plain note as a note', () => {
+  // The component owns the matching, because a `property:` entry needs the app; the API only relays its answer.
+  it('answers what the settings component answers', () => {
+    const isTreatedAsAttachment = vi.fn((path: string) => path === 'Notes/Drawing.md');
+    pluginSettingsComponent = strictProxy<PluginSettingsComponent>({ isTreatedAsAttachment, settings });
     const pluginApi = createPluginApi(createApp({}));
 
-    expect(pluginApi.isTreatedAsAttachment('Notes/Drawing.excalidraw.md')).toBe(true);
+    expect(pluginApi.isTreatedAsAttachment('Notes/Drawing.md')).toBe(true);
     expect(pluginApi.isTreatedAsAttachment('Notes/Note.md')).toBe(false);
-  });
-
-  it('follows an edited extension list', () => {
-    settings.treatAsAttachmentExtensions = ['.canvas.md'];
-    const pluginApi = createPluginApi(createApp({}));
-
-    expect(pluginApi.isTreatedAsAttachment('Notes/Board.canvas.md')).toBe(true);
-    expect(pluginApi.isTreatedAsAttachment('Notes/Drawing.excalidraw.md')).toBe(false);
+    expect(isTreatedAsAttachment).toHaveBeenCalledWith('Notes/Drawing.md');
   });
 });
