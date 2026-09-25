@@ -5,8 +5,8 @@ import type { PluginEventSource } from 'obsidian-dev-utils/obsidian/plugin/plugi
 
 import { PluginSettingsComponentBase } from 'obsidian-dev-utils/obsidian/components/plugin-settings-component';
 import {
-  getPath,
-  isNote
+  isNote,
+  isTreatedAsAttachment
 } from 'obsidian-dev-utils/obsidian/file-system';
 
 import { PluginSettings } from './plugin-settings.ts';
@@ -65,15 +65,34 @@ export class PluginSettingsComponent extends PluginSettingsComponentBase<PluginS
   /**
    * Whether the path is a note this plugin should treat as one.
    *
-   * A file whose extension makes it a note is still an attachment when the user has listed its
-   * extension in {@link PluginSettings.treatAsAttachmentExtensions} — `.excalidraw.md` being the case
+   * A file whose extension makes it a note is still an attachment when
+   * {@link PluginSettingsComponent.isTreatedAsAttachment} says so — an Excalidraw drawing being the case
    * that motivated the setting.
    *
    * @param pathOrFile - The path or file to test.
    * @returns `true` when the path is a note.
    */
   public isNoteEx(pathOrFile: null | PathOrAbstractFile): boolean {
-    return pathOrFile !== null && isNote(pathOrFile) && !this.settings.isTreatedAsAttachment(getPath(this.app, pathOrFile));
+    return pathOrFile !== null && isNote(pathOrFile) && !this.isTreatedAsAttachment(pathOrFile);
+  }
+
+  /**
+   * Whether the path names an attachment despite its extension, per
+   * {@link PluginSettings.treatAsAttachmentExtensions}.
+   *
+   * Lives here rather than on the settings object because a `property:` entry reads the file's frontmatter,
+   * which needs the app. A file the metadata cache has not read yet matches no `property:` entry, so it stays
+   * a note until the cache has it — the side that moves and trashes less.
+   *
+   * @param pathOrFile - The path or file to test.
+   * @returns `true` when the path is treated as an attachment.
+   */
+  public isTreatedAsAttachment(pathOrFile: PathOrAbstractFile): boolean {
+    return isTreatedAsAttachment({
+      app: this.app,
+      attachmentExtensions: this.settings.treatAsAttachmentExtensions,
+      pathOrFile
+    });
   }
 
   /**

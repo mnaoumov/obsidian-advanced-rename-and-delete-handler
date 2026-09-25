@@ -73,7 +73,7 @@ describe('buildSettingsMigrationRows', () => {
       proposedSettings: {
         shouldHandleDeletions: true,
         shouldHandleRenames: false,
-        treatAsAttachmentExtensions: ['.excalidraw.md']
+        treatAsAttachmentExtensions: ['.excalidraw.md', 'property:excalidraw-plugin']
       }
     });
 

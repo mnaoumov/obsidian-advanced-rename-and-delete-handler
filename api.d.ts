@@ -51,8 +51,12 @@ export interface AdvancedRenameAndDeleteHandlerApi {
   isPathIgnored: (path: string) => boolean;
 
   /**
-   * Whether the path names an attachment even though its extension says otherwise — `.excalidraw.md` being
-   * the case that motivated the setting.
+   * Whether the path names an attachment even though its extension says otherwise — an Excalidraw drawing
+   * being the case that motivated the setting, recognized by its `.excalidraw.md` extension or, through a
+   * `property:excalidraw-plugin` entry, by its frontmatter.
+   *
+   * A `property:` entry reads the metadata cache, so a markdown file Obsidian has not indexed yet matches no
+   * such entry and is answered `false` until it has.
    *
    * A predicate for the same reason as {@link AdvancedRenameAndDeleteHandlerApi.isPathIgnored}: the matching
    * stays in one place rather than being re-derived from
@@ -140,7 +144,8 @@ export interface HandedOverSettings {
   readonly shouldUpdateFileNameAliases: boolean;
 
   /**
-   * Extensions whose files are attachments even though their extension says otherwise.
+   * Entries that make a file an attachment even though its extension says otherwise: an extension such as
+   * `.excalidraw.md`, or a `property:name` / `property:name=value` frontmatter match.
    */
   readonly treatAsAttachmentExtensions: readonly string[];
 }

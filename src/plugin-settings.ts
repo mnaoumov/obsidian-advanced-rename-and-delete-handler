@@ -1,4 +1,3 @@
-import { isTreatedAsAttachment } from 'obsidian-dev-utils/obsidian/file-system';
 import { PathSettings } from 'obsidian-dev-utils/obsidian/path-settings';
 
 import { EmptyFolderBehavior } from './rename-delete-handler-component.ts';
@@ -92,10 +91,13 @@ export class PluginSettings {
   public shouldUpdateFileNameAliases = true;
 
   /**
-   * Extensions whose files are attachments even though their extension says otherwise — the canonical
-   * case being `.excalidraw.md`, which is a drawing rather than a note.
+   * Entries that make a file an attachment even though its extension says otherwise — the canonical
+   * case being an Excalidraw drawing, which is stored as markdown. An entry is an extension such as
+   * `.excalidraw.md`, or a `property:name` / `property:name=value` frontmatter match: Excalidraw itself
+   * recognizes a drawing by its `excalidraw-plugin` property, so one saved without the compound extension
+   * is still a drawing.
    */
-  public treatAsAttachmentExtensions: readonly string[] = ['.excalidraw.md'];
+  public treatAsAttachmentExtensions: readonly string[] = ['.excalidraw.md', 'property:excalidraw-plugin'];
 
   /**
    * Paths this plugin leaves alone entirely. A plain entry is a path from the vault root; an entry
@@ -124,12 +126,5 @@ export class PluginSettings {
 
   public isPathIgnored(path: string): boolean {
     return this._pathSettings.isPathIgnored(path);
-  }
-
-  public isTreatedAsAttachment(path: string): boolean {
-    return isTreatedAsAttachment({
-      attachmentExtensions: this.treatAsAttachmentExtensions,
-      pathOrFile: path
-    });
   }
 }
