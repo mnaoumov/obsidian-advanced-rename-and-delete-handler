@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2.1.0
+
+- feat(settings): *Treat as attachment extensions* accepts `property:name` and `property:name=value` entries, matched against a note's frontmatter, so an Excalidraw drawing saved as a plain `.md` is an attachment by its `excalidraw-plugin` property (Custom Attachment Location #90). The default is now `.excalidraw.md` plus `property:excalidraw-plugin`. **A list you already have saved is not changed:** to get the new behaviour, add `property:excalidraw-plugin` on its own line in the settings tab. A property entry matches a file only once Obsidian has indexed it.
+- fix(conflicts): stop warning about *Delete empty folders* on Consistent Attachments and Links 4.1.0, which no longer offers that command.
+- chore(deps): obsidian-dev-utils 107.1.0 and obsidian-integration-testing 17.
+
 ## 2.0.0
 
 - **Breaking:** every behaviour is now off by default, including handling renames and renaming the attachment folder. Installing the plugin no longer changes how a vault behaves. A setting already saved keeps its value, but a behaviour you relied on as a 1.x default without ever saving it is now off: turn it back on in the settings tab. A one-time notice on first load says so.
