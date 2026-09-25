@@ -302,10 +302,7 @@ export class BacklinkIndex {
  * @returns The note's references.
  */
 function getCacheReferences(cache: CachedMetadata | undefined): Reference[] {
-  if (!cache) {
-    return [];
-  }
-  return [...cache.frontmatterLinks ?? [], ...cache.links ?? [], ...cache.embeds ?? []];
+  return cache ? [...cache.frontmatterLinks ?? [], ...cache.links ?? [], ...cache.embeds ?? []] : [];
 }
 
 /**

@@ -73,11 +73,7 @@ export class PluginSettingsComponent extends PluginSettingsComponentBase<PluginS
    * @returns `true` when the path is a note.
    */
   public isNoteEx(pathOrFile: null | PathOrAbstractFile): boolean {
-    if (!pathOrFile || !isNote(pathOrFile)) {
-      return false;
-    }
-
-    return !this.settings.isTreatedAsAttachment(getPath(this.app, pathOrFile));
+    return pathOrFile !== null && isNote(pathOrFile) && !this.settings.isTreatedAsAttachment(getPath(this.app, pathOrFile));
   }
 
   /**

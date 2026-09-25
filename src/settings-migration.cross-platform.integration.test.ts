@@ -198,11 +198,7 @@ describe('A consumer plugin proposing its rename/delete settings', () => {
         await settlementPromise;
         const migrateSettingsResult = await migrationPromise;
         function readSavedValue(record: unknown, key: string): unknown {
-          if (typeof record !== 'object' || record === null) {
-            return undefined;
-          }
-
-          return Object.entries(record).find(([entryKey]) => entryKey === key)?.[1];
+          return typeof record !== 'object' || record === null ? undefined : Object.entries(record).find(([entryKey]) => entryKey === key)?.[1];
         }
 
         const savedRecord = await plugin.loadData();
@@ -299,11 +295,7 @@ describe('A consumer plugin proposing its rename/delete settings', () => {
         await settlementPromise;
         const migrateSettingsResult = await migrationPromise;
         function readSavedValue(record: unknown, key: string): unknown {
-          if (typeof record !== 'object' || record === null) {
-            return undefined;
-          }
-
-          return Object.entries(record).find(([entryKey]) => entryKey === key)?.[1];
+          return typeof record !== 'object' || record === null ? undefined : Object.entries(record).find(([entryKey]) => entryKey === key)?.[1];
         }
 
         const savedRecord = await plugin.loadData();

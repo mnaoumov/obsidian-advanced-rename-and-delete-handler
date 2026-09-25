@@ -387,11 +387,7 @@ class DeleteHandler {
 
         for (const link of links) {
           const attachmentFile = extractLinkFile({ app: this.app, link, sourcePathOrFile: this.file.path });
-          if (!attachmentFile) {
-            continue;
-          }
-
-          if (this.settingsManager.isNoteEx(attachmentFile.path)) {
+          if (!attachmentFile || this.settingsManager.isNoteEx(attachmentFile.path)) {
             continue;
           }
 
@@ -432,12 +428,8 @@ class DeleteHandler {
     });
     const attachmentFolder = getFolderOrNull({ app: this.app, pathOrFolder: attachmentFolderPath });
 
-    if (!attachmentFolder) {
-      return;
-    }
-
     if (
-      !await hasOwnAttachmentFolder({
+      !attachmentFolder || !await hasOwnAttachmentFolder({
         app: this.app,
         context: AttachmentPathContext.DeleteNote,
         path: this.file.path
@@ -625,11 +617,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
     fallback: () => Promise<void>,
     deleteAbstractFile: (abstractFile: TAbstractFile) => Promise<void>
   ): Promise<void> {
-    if (!this.shouldConsiderFolder(file)) {
-      return fallback();
-    }
-
-    return this.replayFolderDeletion(file, fallback, deleteAbstractFile);
+    return this.shouldConsiderFolder(file) ? this.replayFolderDeletion(file, fallback, deleteAbstractFile) : fallback();
   }
 
   /**
@@ -806,11 +794,7 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
         originalArguments: [configItem],
         originalMethodBound
       }) => {
-        if (this.isForcingAlwaysUpdateLinks && configItem === 'alwaysUpdateLinks') {
-          return true;
-        }
-
-        return originalMethodBound(configItem);
+        return (this.isForcingAlwaysUpdateLinks && configItem === 'alwaysUpdateLinks') || originalMethodBound(configItem);
       }
     });
   }
@@ -938,11 +922,7 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
           return true;
         }
 
-        if (!this.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas)) {
-          return false;
-        }
-
-        if (this.app.plugins.getPlugin('backlink-cache')) {
+        if (!this.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas) || this.app.plugins.getPlugin('backlink-cache')) {
           return false;
         }
 
@@ -1272,26 +1252,28 @@ class RenameHandler {
 
   private async continueInterruptedRenames(): Promise<void> {
     const interruptedRenames = this.interruptedRenamesMap.get(this.oldPath);
-    if (interruptedRenames) {
-      this.interruptedRenamesMap.delete(this.oldPath);
-      for (const interruptedRename of interruptedRenames) {
-        await new RenameHandler({
-          abortSignal: this.abortSignal,
-          app: this.app,
-          backlinkIndex: this.backlinkIndex,
-          handledRenames: this.handledRenames,
-          interruptedCombinedBacklinksMap: interruptedRename.combinedBacklinksMap,
-          interruptedRenamesMap: this.interruptedRenamesMap,
-          linkUpdateProgressReporter: this.linkUpdateProgressReporter,
-          newPath: this.newPath,
-          oldCache: this.oldCache,
-          oldPath: interruptedRename.oldPath,
-          oldPathBacklinksMap: this.oldPathBacklinksMap,
-          pluginNoticeComponent: this.pluginNoticeComponent,
-          resourceLockComponent: this.resourceLockComponent,
-          settingsManager: this.settingsManager
-        }).handle();
-      }
+    if (!interruptedRenames) {
+      return;
+    }
+
+    this.interruptedRenamesMap.delete(this.oldPath);
+    for (const interruptedRename of interruptedRenames) {
+      await new RenameHandler({
+        abortSignal: this.abortSignal,
+        app: this.app,
+        backlinkIndex: this.backlinkIndex,
+        handledRenames: this.handledRenames,
+        interruptedCombinedBacklinksMap: interruptedRename.combinedBacklinksMap,
+        interruptedRenamesMap: this.interruptedRenamesMap,
+        linkUpdateProgressReporter: this.linkUpdateProgressReporter,
+        newPath: this.newPath,
+        oldCache: this.oldCache,
+        oldPath: interruptedRename.oldPath,
+        oldPathBacklinksMap: this.oldPathBacklinksMap,
+        pluginNoticeComponent: this.pluginNoticeComponent,
+        resourceLockComponent: this.resourceLockComponent,
+        settingsManager: this.settingsManager
+      }).handle();
     }
   }
 
@@ -1450,15 +1432,17 @@ class RenameMap {
           continue;
         }
 
-        if (isOldAttachmentFolderAtRoot || oldAttachmentFile.path.startsWith(oldAttachmentFolderPath)) {
-          const oldAttachmentBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(oldAttachmentFile);
-          this.abortSignal.throwIfAborted();
-          const keys = new Set<string>(oldAttachmentBacklinks.keys());
-          keys.delete(this.oldPath);
-          keys.delete(this.newPath);
-          if (keys.size === 0) {
-            oldAttachmentFiles.push(oldAttachmentFile);
-          }
+        if (!isOldAttachmentFolderAtRoot && !oldAttachmentFile.path.startsWith(oldAttachmentFolderPath)) {
+          continue;
+        }
+
+        const oldAttachmentBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(oldAttachmentFile);
+        this.abortSignal.throwIfAborted();
+        const keys = new Set<string>(oldAttachmentBacklinks.keys());
+        keys.delete(this.oldPath);
+        keys.delete(this.newPath);
+        if (keys.size === 0) {
+          oldAttachmentFiles.push(oldAttachmentFile);
         }
       }
     }

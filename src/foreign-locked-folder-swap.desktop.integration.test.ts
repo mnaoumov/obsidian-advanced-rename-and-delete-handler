@@ -248,11 +248,7 @@ describe('A folder swap owned by another plugin', () => {
           const lastSlashIndex = path.lastIndexOf('/');
           const name = path.slice(lastSlashIndex + 1);
           const lastDotIndex = name.lastIndexOf('.');
-          if (lastDotIndex <= 0) {
-            return app.vault.getAvailablePath(path, '');
-          }
-
-          return app.vault.getAvailablePath(path.slice(0, path.length - (name.length - lastDotIndex)), name.slice(lastDotIndex + 1));
+          return lastDotIndex <= 0 ? app.vault.getAvailablePath(path, '') : app.vault.getAvailablePath(path.slice(0, path.length - (name.length - lastDotIndex)), name.slice(lastDotIndex + 1));
         }
 
         /**

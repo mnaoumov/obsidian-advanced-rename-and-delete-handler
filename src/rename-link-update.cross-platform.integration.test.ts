@@ -53,9 +53,6 @@ describe('Renaming a note', () => {
         const target = await app.vault.create(targetPath, '# Target\n');
         const source = await app.vault.create(sourcePath, `[link](<${targetPath}>)\n`);
 
-        // Obsidian otherwise asks for confirmation through a modal, which would stall a headless run.
-        app.vault.setConfig('alwaysUpdateLinks', true);
-
         await waitUntil({
           message: 'the link resolves to the target',
           predicate: () => app.metadataCache.getBacklinksForFile(target).keys().length > 0,
