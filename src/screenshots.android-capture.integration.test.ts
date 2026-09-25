@@ -159,11 +159,8 @@ beforeAll(async () => {
   });
 
   await evalInObsidian({
-    async callback({ app }): Promise<void> {
+    async callback(): Promise<void> {
       const SETTLE_DELAY_IN_MILLISECONDS = 1000;
-
-      // Otherwise Obsidian asks for confirmation through a modal, which a capture run cannot answer.
-      app.vault.setConfig('alwaysUpdateLinks', true);
 
       /*
        * Every notice the load put on screen, which on a fresh vault is the permanent first-load one. Removed
