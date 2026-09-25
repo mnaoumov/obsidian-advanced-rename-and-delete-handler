@@ -72,6 +72,8 @@ describe('PluginSettingsComponent', () => {
     it('should leave an existing data.json alone, so a save that got there first is kept', async () => {
       const loadData = vi.fn<() => Promise<unknown>>().mockResolvedValue(null);
       const component = await loadComponentWith(loadData);
+      // The library's own first load writes the default record when it finds no data.json; that is not the write under test.
+      saveData.mockClear();
       loadData.mockResolvedValue({ shouldHandleRenames: true });
 
       await component.ensureDataFileExists();

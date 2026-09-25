@@ -166,10 +166,6 @@ export class RescueDecisionScope {
     }
 
     const stickyNotePath = this.stickyDecision.adoptingNotePath;
-    if (stickyNotePath !== null && !survivingNotePaths.includes(stickyNotePath)) {
-      return null;
-    }
-
-    return this.stickyDecision;
+    return stickyNotePath !== null && !survivingNotePaths.includes(stickyNotePath) ? null : this.stickyDecision;
   }
 }

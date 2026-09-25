@@ -209,11 +209,7 @@ describe('Moving a canvas whose text node embeds its attachment', () => {
           const canvasData = JSON.parse(await app.vault.read(movedCanvas)) as CanvasDataLike;
           const textNode = canvasData.nodes.find((node) => node.type === 'text');
           const linkpath = /!\[\[(?<linkpath>[^\]|#]+)/.exec(textNode?.text ?? '')?.groups?.['linkpath'];
-          if (linkpath === undefined) {
-            return null;
-          }
-
-          return app.metadataCache.getFirstLinkpathDest(linkpath, DST_CANVAS)?.path ?? null;
+          return linkpath === undefined ? null : app.metadataCache.getFirstLinkpathDest(linkpath, DST_CANVAS)?.path ?? null;
         }
 
         const originalAttachmentFolderPath = app.vault.getConfig('attachmentFolderPath');
