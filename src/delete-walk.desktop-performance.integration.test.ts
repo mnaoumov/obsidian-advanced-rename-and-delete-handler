@@ -19,27 +19,22 @@ import {
 } from '../scripts/generate-performance-vault.ts';
 
 /*
- * Counts the whole-vault backlink walks a protected folder deletion takes, and guards the half of them this
- * plugin owns.
+ * Counts the whole-vault backlink walks a protected folder deletion takes, and asserts it takes none.
  *
  * Deleting a folder whose attachments a note outside it still embeds goes through
  * `DeleteProtectionPatchComponent`: a pre-scan asking which attachments are still used, the unit-folder rescue
  * pre-pass asking again, and then the library's `deleteIfNotUsed` walking the folder. The first two are this
  * plugin's own `findSurvivingNotePaths` lookups, and they go through `BacklinkIndex`. The third calls the
- * library's `getBacklinksForFileSafe` from inside the library, once per file it visits, and each call is a full
- * `iterateAllRefs` walk that this plugin cannot redirect.
+ * library's `getBacklinksForFileSafe` once per file it visits, and since `obsidian-dev-utils` 107.0.0 that
+ * answers from the library's own backlink index rather than from an `iterateAllRefs` walk.
  *
- * The fixture is A embedded attachments plus one unlinked one, so the deletion walks the vault at most A + 1
- * times, once per file the library visits, and the suite asserts exactly that bound. Each pre-pass also asks once
- * per non-note file, so a pre-pass walking again fails it at 2(A + 1) + 1. Measured 2026-09-24 with A = 20 on
- * `obsidian-dev-utils` 105.0.0: 43 walks before the pre-passes went through the index, 1 after.
+ * The fixture is A embedded attachments plus one unlinked one. Each pre-pass asks once per non-note file and the
+ * library once per file it visits, so a lookup falling back to a walk shows up as A + 1 walks or more. Measured
+ * with A = 20: 43 walks on `obsidian-dev-utils` 105.0.0 before the pre-passes went through the index, 1 after
+ * them, and 0 on 107.0.0 (2026-09-25).
  *
- * That 1 is lower than A + 1 because of a defect in the library's walk, not because the walk is cheap:
- * `deleteIfNotUsed` folds each child's result into its folder's with `&&=`, which short-circuits, so the first
- * child it keeps ends the walk and no sibling after it is visited at all. The fixture's unlinked `unused.png` is
- * left behind for that reason. The suite therefore waits for the deletion to SETTLE rather than for that file to
- * go, and asserts nothing about it; once the library visits every child, its share rises to A + 1 and the
- * bound still holds.
+ * The library visits every child of the folder, keeping the attachments the holder still embeds and deleting the
+ * unlinked `unused.png`, so the suite asserts that file is gone as well as that the rest stayed.
  *
  * The deletion is FIRED and the poll runs in Node, for the reason this repo's `AGENTS.md` gives under the
  * transport cap. Its effect arriving is not the queue being empty, so the queue is drained afterwards too.
@@ -49,11 +44,10 @@ const SCENARIO_TIMEOUT_IN_MS = 300_000;
 const DELETE_WAIT_IN_MS = 180_000;
 
 /**
- * How many whole-vault walks the folder deletion may take: the library's `deleteIfNotUsed`, once per file it
- * visits — the embedded attachments and the one unlinked file. Everything this plugin asks goes through
- * `BacklinkIndex` and walks nothing.
+ * How many whole-vault walks the folder deletion may take. Every lookup it makes, this plugin's and the
+ * library's, is answered from a backlink index.
  */
-const MAX_WALKS_PER_FOLDER_DELETE = DELETE_WALK_ATTACHMENT_COUNT + 1;
+const MAX_WALKS_PER_FOLDER_DELETE = 0;
 
 /**
  * What the deletion poll reports back to Node.
@@ -61,6 +55,7 @@ const MAX_WALKS_PER_FOLDER_DELETE = DELETE_WALK_ATTACHMENT_COUNT + 1;
 interface DeleteProbe {
   readonly deleteError: null | string;
   readonly isDeleteSettled: boolean;
+  readonly isUnusedAttachmentPresent: boolean;
   readonly keptAttachmentCount: number;
 }
 
@@ -75,7 +70,7 @@ interface DeleteWalkContext {
 }
 
 describe('folder delete backlink walks', () => {
-  it('walks the vault only for the library\'s own per-file lookups, not for this plugin\'s pre-passes', async () => {
+  it('answers every backlink lookup from an index, walking the vault not once', async () => {
     const contextId = new ContextId<DeleteWalkContext>();
     const vaultPath = getTemporaryVault().path;
 
@@ -126,6 +121,7 @@ describe('folder delete backlink walks', () => {
           return {
             deleteError: context.deleteError ?? null,
             isDeleteSettled: context.isDeleteSettled ?? false,
+            isUnusedAttachmentPresent: app.vault.getFileByPath(`${folderPath}/unused.png`) !== null,
             keptAttachmentCount: app.vault.getFiles().filter((file) => file.path.startsWith(`${folderPath}/attachment-`)).length
           };
         },
@@ -162,6 +158,7 @@ describe('folder delete backlink walks', () => {
       });
 
       expect(deleted.keptAttachmentCount).toBe(DELETE_WALK_ATTACHMENT_COUNT);
+      expect(deleted.isUnusedAttachmentPresent).toBe(false);
       expect(walkCount).toBeLessThanOrEqual(MAX_WALKS_PER_FOLDER_DELETE);
     } finally {
       await drainQueue();
