@@ -75,6 +75,7 @@ import {
 } from 'obsidian-dev-utils/obsidian/link';
 import {
   getLinks,
+  hasBacklinkCachePlugin,
   registerFileCacheForNonExistingFile,
   registerFiles
 } from 'obsidian-dev-utils/obsidian/metadata-cache';
@@ -922,7 +923,7 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
           return true;
         }
 
-        if (!this.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas) || this.app.plugins.getPlugin('backlink-cache')) {
+        if (!this.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas) || hasBacklinkCachePlugin(this.app)) {
           return false;
         }
 
