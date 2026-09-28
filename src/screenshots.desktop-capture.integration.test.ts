@@ -46,6 +46,12 @@
  *    heading, caught on the other half of its blink. See that function for why focus is dropped rather than
  *    the caret hidden.
  *
+ * A third cause is now the harness's to remove: Obsidian draws an unfocused window's chrome a shade lighter,
+ * and a freshly launched window is often refused the foreground. `obsidian-integration-testing` 17.3.0 pins the
+ * window's `is-focused` class for every capture, and taking it moved all three frames by one or two grey
+ * levels across the whole window on 2026-09-28 — every committed frame had been shot unfocused. Both dark,
+ * before and after; the theme did not move.
+ *
  * So a dirty `images/screenshots/` after a capture IS signal here, unlike in the sibling suite in
  * `obsidian-app-update-notifier`, whose frames carry a wall clock and genuine compression noise and where
  * the churn was accepted as unfixable. Two things move a frame, and both are worth seeing: this plugin's own
@@ -71,6 +77,7 @@ import {
 import { join } from 'node:path';
 import process from 'node:process';
 import {
+  applyObsidianTheme,
   captureObsidianScreenshot,
   evalInObsidian,
   labelScreenshot,
@@ -180,6 +187,16 @@ beforeAll(async () => {
   });
   await vault.syncToDevice();
 
+  /*
+   * Not a bare `app.changeTheme('obsidian')` inside the closure below. That only SCHEDULES the config save,
+   * a second later, and a config reload landing first — any watcher event on `.obsidian/app.json` or
+   * `appearance.json` — drops `theme`, so every frame comes out light and silently overwrites the committed
+   * ones. `applyObsidianTheme` saves at once, waits
+   * for the theme on screen and on disk, and makes `captureObsidianScreenshot` refuse a frame that has left
+   * it. See `obsidian-integration-testing`'s `AGENTS.md`.
+   */
+  await applyObsidianTheme({ theme: 'dark', vaultPath: vaultPath() });
+
   await evalInObsidian({
     async callback({ app, lib: { waitUntil }, sourceNotePath }) {
       /*
@@ -191,8 +208,6 @@ beforeAll(async () => {
        */
       const SETTLE_TIMEOUT_IN_MILLISECONDS = 20_000;
       const SETTLE_DELAY_IN_MILLISECONDS = 1000;
-
-      app.changeTheme('obsidian');
 
       await waitUntil({
         message: 'the staged notes to appear in the vault',
