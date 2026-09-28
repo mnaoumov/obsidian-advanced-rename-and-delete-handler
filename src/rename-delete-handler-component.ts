@@ -74,6 +74,8 @@ import {
   updateLinksInFile
 } from 'obsidian-dev-utils/obsidian/link';
 import {
+  getBacklinksForFileOrPath,
+  getBacklinksForFileSafe,
   getLinks,
   hasBacklinkCachePlugin,
   registerFileCacheForNonExistingFile,
@@ -100,7 +102,6 @@ import {
 
 import type { UnitFolderMove } from './unit-folder-rescue.ts';
 
-import { BacklinkIndex } from './backlink-index.ts';
 import { pluralize } from './pluralize.ts';
 import { RescueDecisionScope } from './rescue-decision-scope.ts';
 import { planUnitFolderMove } from './unit-folder-rescue.ts';
@@ -212,7 +213,6 @@ export interface RescueDestination {
 interface DeleteHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
-  readonly backlinkIndex: BacklinkIndex;
   readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
   readonly file: TAbstractFile;
   readonly pluginNoticeComponent: PluginNoticeComponent;
@@ -222,7 +222,6 @@ interface DeleteHandlerConstructorParams {
 
 interface DeleteProtectionPatchComponentConstructorParams {
   readonly app: App;
-  readonly backlinkIndex: BacklinkIndex;
   readonly pluginNoticeComponent: PluginNoticeComponent;
   readonly rescueDecisionScope: RescueDecisionScope;
   readonly settingsManager: SettingsManager;
@@ -244,7 +243,7 @@ interface FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams {
 }
 
 interface FindSurvivingNotePathsParams {
-  readonly backlinkIndex: BacklinkIndex;
+  readonly app: App;
   readonly deletedNotePaths: Iterable<string>;
   readonly file: TFile;
 }
@@ -284,7 +283,6 @@ interface RenameDeleteHandlerComponentConstructorParams {
 interface RenameHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
-  readonly backlinkIndex: BacklinkIndex;
   readonly handledRenames: HandledRenames;
   readonly interruptedCombinedBacklinksMap?: Map<string, Map<string, string>>;
   readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -301,7 +299,6 @@ interface RenameHandlerConstructorParams {
 interface RenameMapConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
-  readonly backlinkIndex: BacklinkIndex;
   readonly newPath: string;
   readonly oldCache: CachedMetadata | null;
   readonly oldPath: string;
@@ -327,7 +324,6 @@ interface RenameMapInitBacklinksMapParams {
 
 interface RescueStillUsedUnitFoldersParams {
   readonly app: App;
-  readonly backlinkIndex: BacklinkIndex;
   readonly deletedNotePaths: Iterable<string>;
   readonly pluginNoticeComponent: PluginNoticeComponent;
   readonly rescueDecisionScope: RescueDecisionScope;
@@ -339,7 +335,6 @@ interface RescueStillUsedUnitFoldersParams {
 class DeleteHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
-  private readonly backlinkIndex: BacklinkIndex;
   private readonly deletedMetadataCacheMap: Map<string, CachedMetadata>;
   private readonly file: TAbstractFile;
   private readonly pluginNoticeComponent: PluginNoticeComponent;
@@ -348,7 +343,6 @@ class DeleteHandler {
 
   public constructor(params: DeleteHandlerConstructorParams) {
     this.app = params.app;
-    this.backlinkIndex = params.backlinkIndex;
     this.file = params.file;
     this.abortSignal = params.abortSignal;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
@@ -446,7 +440,6 @@ class DeleteHandler {
      */
     await rescueStillUsedUnitFolders({
       app: this.app,
-      backlinkIndex: this.backlinkIndex,
       deletedNotePaths: [this.file.path],
       pluginNoticeComponent: this.pluginNoticeComponent,
       rescueDecisionScope: this.rescueDecisionScope,
@@ -498,7 +491,6 @@ class DeleteHandler {
  */
 class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
   private readonly app: App;
-  private readonly backlinkIndex: BacklinkIndex;
   private readonly pluginNoticeComponent: PluginNoticeComponent;
 
   /**
@@ -517,7 +509,6 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
   public constructor(params: DeleteProtectionPatchComponentConstructorParams) {
     super();
     this.app = params.app;
-    this.backlinkIndex = params.backlinkIndex;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.rescueDecisionScope = params.rescueDecisionScope;
     this.settingsManager = params.settingsManager;
@@ -593,7 +584,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
 
     for (const candidateFile of candidateFiles) {
       const survivingNotePaths = await findSurvivingNotePaths({
-        backlinkIndex: this.backlinkIndex,
+        app: this.app,
         deletedNotePaths,
         file: candidateFile
       });
@@ -661,7 +652,6 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
        */
       await rescueStillUsedUnitFolders({
         app: this.app,
-        backlinkIndex: this.backlinkIndex,
         deletedNotePaths,
         pluginNoticeComponent: this.pluginNoticeComponent,
         rescueDecisionScope: this.rescueDecisionScope,
@@ -865,8 +855,8 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * 2% of a 20-file folder rename with it on, 0.03% of a 1000-file one. Those last two shares were measured
    * while this handler still made two backlink lookups per renamed file through Obsidian's `getBacklinksForFile`,
    * which is the same full `iterateAllRefs` walk, so a folder rename walked the vault 2F+1 times. The lookups now
-   * go through `BacklinkIndex` (`src/backlink-index.ts`), which resolves only the references of the notes that
-   * could hold a backlink, so this walk is the only one left in a rename and its share of one has grown
+   * go through `obsidian-dev-utils`' backlink helpers, whose index resolves only the references of the notes
+   * that could hold a backlink, so this walk is the only one left in a rename and its share of one has grown
    * accordingly. It is still one walk per `renameFile`.
    *
    * @param linkUpdates - The link updates Obsidian collected before invoking the handler.
@@ -1000,7 +990,6 @@ class MetadataDeletedHandler {
 class RenameHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
-  private readonly backlinkIndex: BacklinkIndex;
   private readonly handledRenames: HandledRenames;
   private readonly interruptedCombinedBacklinksMap: Map<string, Map<string, string>>;
   private readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -1016,7 +1005,6 @@ class RenameHandler {
   public constructor(params: RenameHandlerConstructorParams) {
     this.abortSignal = params.abortSignal;
     this.app = params.app;
-    this.backlinkIndex = params.backlinkIndex;
     this.resourceLockComponent = params.resourceLockComponent;
     this.handledRenames = params.handledRenames;
     this.interruptedCombinedBacklinksMap = params.interruptedCombinedBacklinksMap ?? new Map<string, Map<string, string>>();
@@ -1072,7 +1060,6 @@ class RenameHandler {
       const renameMap = new RenameMap({
         abortSignal: this.abortSignal,
         app: this.app,
-        backlinkIndex: this.backlinkIndex,
         newPath: this.newPath,
         oldCache: this.oldCache,
         oldPath: this.oldPath,
@@ -1099,7 +1086,7 @@ class RenameHandler {
           if (attachmentOldPath === this.oldPath) {
             continue;
           }
-          const attachmentOldPathBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(attachmentOldPath);
+          const attachmentOldPathBacklinks = await getBacklinksForFileSafe({ app: this.app, pathOrFile: attachmentOldPath });
           const attachmentOldPathBacklinksMap = attachmentOldPathBacklinks.data;
           this.abortSignal.throwIfAborted();
           renameMap.initBacklinksMap({
@@ -1262,7 +1249,6 @@ class RenameHandler {
       await new RenameHandler({
         abortSignal: this.abortSignal,
         app: this.app,
-        backlinkIndex: this.backlinkIndex,
         handledRenames: this.handledRenames,
         interruptedCombinedBacklinksMap: interruptedRename.combinedBacklinksMap,
         interruptedRenamesMap: this.interruptedRenamesMap,
@@ -1289,7 +1275,6 @@ class RenameHandler {
     await new RenameHandler({
       abortSignal: this.abortSignal,
       app: this.app,
-      backlinkIndex: this.backlinkIndex,
       handledRenames: this.handledRenames,
       interruptedRenamesMap: this.interruptedRenamesMap,
       linkUpdateProgressReporter: this.linkUpdateProgressReporter,
@@ -1311,7 +1296,7 @@ class RenameHandler {
     let oldPathBacklinksMapRefreshed: Map<string, Reference[]>;
     {
       using _registration = registerFiles(this.app, [fakeOldFile]);
-      const fakeOldFileBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(fakeOldFile);
+      const fakeOldFileBacklinks = await getBacklinksForFileSafe({ app: this.app, pathOrFile: fakeOldFile });
       oldPathBacklinksMapRefreshed = fakeOldFileBacklinks.data;
     }
 
@@ -1345,7 +1330,6 @@ class RenameHandler {
 class RenameMap {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
-  private readonly backlinkIndex: BacklinkIndex;
   private readonly map = new Map<string, string>();
   private readonly newPath: string;
   private readonly oldCache: CachedMetadata | null;
@@ -1356,7 +1340,6 @@ class RenameMap {
   public constructor(params: RenameMapConstructorParams) {
     this.abortSignal = params.abortSignal;
     this.app = params.app;
-    this.backlinkIndex = params.backlinkIndex;
     this.settingsManager = params.settingsManager;
     this.oldCache = params.oldCache;
     this.oldPath = params.oldPath;
@@ -1437,7 +1420,7 @@ class RenameMap {
           continue;
         }
 
-        const oldAttachmentBacklinks = await this.backlinkIndex.getBacklinksForFileSafe(oldAttachmentFile);
+        const oldAttachmentBacklinks = await getBacklinksForFileSafe({ app: this.app, pathOrFile: oldAttachmentFile });
         this.abortSignal.throwIfAborted();
         const keys = new Set<string>(oldAttachmentBacklinks.keys());
         keys.delete(this.oldPath);
@@ -1619,14 +1602,6 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
    */
   protected readonly settingsManager: SettingsManager;
 
-  /**
-   * Answers this handler's own backlink queries — the rename path's, and the delete path's surviving-note
-   * lookups — from the notes that could hold a backlink, instead of a whole-vault walk per query. See
-   * `src/backlink-index.ts`. The library's `deleteIfNotUsed` still walks per file it visits, because it
-   * calls the library helper from inside, where this index cannot be substituted.
-   */
-  private readonly backlinkIndex: BacklinkIndex;
-
   private readonly deletedMetadataCacheMap = new Map<string, CachedMetadata>();
 
   private readonly handledRenames = new HandledRenames();
@@ -1649,7 +1624,6 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.settingsBuilder = params.settingsBuilder;
     this.settingsManager = new SettingsManager(this.settingsBuilder);
-    this.backlinkIndex = new BacklinkIndex(this.app);
   }
 
   /**
@@ -1671,7 +1645,6 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     this.addChild(
       new DeleteProtectionPatchComponent({
         app: this.app,
-        backlinkIndex: this.backlinkIndex,
         pluginNoticeComponent: this.pluginNoticeComponent,
         rescueDecisionScope: this.rescueDecisionScope,
         settingsManager: this.settingsManager
@@ -1694,7 +1667,6 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
           await new DeleteHandler({
             abortSignal,
             app: this.app,
-            backlinkIndex: this.backlinkIndex,
             deletedMetadataCacheMap: this.deletedMetadataCacheMap,
             file,
             pluginNoticeComponent: this.pluginNoticeComponent,
@@ -1782,14 +1754,13 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
      * resolves every reference; the index compares one hash per note and resolves only the references of the
      * notes that could link here.
      */
-    const oldPathBacklinksMap = this.backlinkIndex.getBacklinksForFileOrPath(oldPath).data;
+    const oldPathBacklinksMap = getBacklinksForFileOrPath(this.app, oldPath).data;
     addToQueue({
       abortSignal: this.abortSignalComponent.abortSignal,
       operationFunction: (abortSignal) =>
         new RenameHandler({
           abortSignal,
           app: this.app,
-          backlinkIndex: this.backlinkIndex,
           handledRenames: this.handledRenames,
           interruptedRenamesMap: this.interruptedRenamesMap,
           linkUpdateProgressReporter: this.linkUpdateProgressReporter,
@@ -1936,7 +1907,7 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
  * @returns The paths of the notes that keep the file alive. Empty means the file is free to go.
  */
 async function findSurvivingNotePaths(params: FindSurvivingNotePathsParams): Promise<string[]> {
-  const backlinks = await params.backlinkIndex.getBacklinksForFileSafe(params.file);
+  const backlinks = await getBacklinksForFileSafe({ app: params.app, pathOrFile: params.file });
   for (const deletedNotePath of params.deletedNotePaths) {
     backlinks.clear(deletedNotePath);
   }
@@ -2040,7 +2011,7 @@ async function rescueStillUsedUnitFolders(params: RescueStillUsedUnitFoldersPara
     }
 
     const survivingNotePaths = await findSurvivingNotePaths({
-      backlinkIndex: params.backlinkIndex,
+      app: params.app,
       deletedNotePaths: params.deletedNotePaths,
       file: candidateFile
     });

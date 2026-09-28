@@ -47,7 +47,7 @@ const RENAME_WAIT_IN_MS = 180_000;
 /**
  * How many whole-vault walks one folder rename may take, whatever its size: Obsidian's own
  * `runAsyncLinkUpdate` walk, which runs once per `renameFile`. Measured at exactly 1 once the handler's lookups
- * went through `BacklinkIndex`; the same scenario took 2F + 1 = 81 before.
+ * went through a backlink index (now `obsidian-dev-utils`'); the same scenario took 2F + 1 = 81 before.
  */
 const MAX_WALKS_PER_FOLDER_RENAME = 1;
 
