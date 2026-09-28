@@ -79,9 +79,26 @@ describe('A plugin that still owns its own rename/delete handler', () => {
         const hasFeatureCommandBefore = hasFeatureCommand();
         let enableError: null | string = null;
 
+        /*
+         * On Android an awaited `adapter.write` now and then leaves a 0-byte file that stays empty: measured at about
+         * 1 write in 100 on the emulator, while the file written straight after it came through whole. A lost
+         * manifest is skipped by `loadManifests`, which logs the JSON parse error and moves on, so the stub silently
+         * never registers. Reading each write back and rewriting it on a mismatch recovered every loss measured.
+         */
+        async function writeVerified(path: string, content: string): Promise<void> {
+          const MAX_ATTEMPTS = 5;
+          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            await adapter.write(path, content);
+            if (await adapter.read(path) === content) {
+              return;
+            }
+          }
+          throw new Error(`${path} did not read back as written after ${String(MAX_ATTEMPTS)} attempts.`);
+        }
+
         try {
           await adapter.mkdir(pluginFolder);
-          await adapter.write(
+          await writeVerified(
             `${pluginFolder}/manifest.json`,
             JSON.stringify({
               author: 'test',
@@ -93,7 +110,7 @@ describe('A plugin that still owns its own rename/delete handler', () => {
             })
           );
           // A plugin Obsidian can actually load, which does nothing.
-          await adapter.write(
+          await writeVerified(
             `${pluginFolder}/main.js`,
             'module.exports = class extends require("obsidian").Plugin {};'
           );
