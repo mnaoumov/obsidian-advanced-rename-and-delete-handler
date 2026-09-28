@@ -24,8 +24,8 @@ import {
  * Deleting a folder whose attachments a note outside it still embeds goes through
  * `DeleteProtectionPatchComponent`: a pre-scan asking which attachments are still used, the unit-folder rescue
  * pre-pass asking again, and then the library's `deleteIfNotUsed` walking the folder. The first two are this
- * plugin's own `findSurvivingNotePaths` lookups, and they go through `BacklinkIndex`. The third calls the
- * library's `getBacklinksForFileSafe` once per file it visits, and since `obsidian-dev-utils` 107.0.0 that
+ * plugin's own `findSurvivingNotePaths` lookups; the third is the library's `deleteIfNotUsed`, once per file it
+ * visits. All three call the library's `getBacklinksForFileSafe`, and since `obsidian-dev-utils` 107.0.0 that
  * answers from the library's own backlink index rather than from an `iterateAllRefs` walk.
  *
  * The fixture is A embedded attachments plus one unlinked one. Each pre-pass asks once per non-note file and the

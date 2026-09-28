@@ -18,7 +18,7 @@ import {
  * Moving a canvas whose TEXT node embeds its attachment moves the attachment, and the handler's queue drains.
  *
  * It used to hang. Collecting the canvas's attachments asks for each one's backlinks through
- * `BacklinkIndex.getBacklinksForFileSafe`, which re-reads every holder and retries until each cached reference
+ * `getBacklinksForFileSafe`, which re-reads every holder and retries until each cached reference
  * matches the holder's text. Obsidian's canvas index reports a text-node embed with a position, but that position
  * is an offset into the node's own text, not into the canvas file, so the check sliced the canvas JSON, never
  * matched, and retried forever. The attachment never moved, and every later rename or delete waited behind it in
