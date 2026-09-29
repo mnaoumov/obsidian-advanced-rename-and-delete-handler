@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 2.1.1
+
+- test(screenshots): merge setting the dark theme through applyObsidianTheme
+- test(android): verify the stub plugin writes in the manifest suites
+- chore(deps): take obsidian-dev-utils 107.2.0
+- refactor(backlinks): drop the local backlink index for the library one
+- fix(rename): recognize Advanced Metadata Cache in the canvas gate
+
 ## 2.1.0
 
 - feat(settings): *Treat as attachment extensions* accepts `property:name` and `property:name=value` entries, matched against a note's frontmatter, so an Excalidraw drawing saved as a plain `.md` is an attachment by its `excalidraw-plugin` property (Custom Attachment Location #90). The default is now `.excalidraw.md` plus `property:excalidraw-plugin`. **A list you already have saved is not changed:** to get the new behaviour, add `property:excalidraw-plugin` on its own line in the settings tab. A property entry matches a file only once Obsidian has indexed it.
