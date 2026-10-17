@@ -210,14 +210,6 @@ export const config = defineObsidianPluginVitestConfig({
     }
 
     /*
-     * The emulator writes about one file in a hundred as empty, whichever plugins are enabled; the setup file
-     * says how that was measured and why it re-writes rather than waits longer. Android only:
-     * `capture-screenshots:android` inherits it through the `context.android` spread in `customProjects`, and
-     * no desktop project gets it.
-     */
-    context.android.setupFiles = [...sharedSetupFiles, './scripts/vitest-setup-android-write-loss-guard.ts'];
-
-    /*
      * Merged rather than assigned: the context seeds `obsidianTransport.obsidianVersion` here when the
      * `OBSIDIAN_VERSION` environment variable is set, and overwriting the object would drop the pin.
      */
