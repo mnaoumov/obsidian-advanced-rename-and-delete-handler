@@ -111,8 +111,9 @@ export class PluginSettings {
   public treatAsAttachmentExtensions: readonly string[] = ['.excalidraw.md', 'property:excalidraw-plugin'];
 
   /**
-   * Paths this plugin leaves alone entirely. A plain entry is a path from the vault root; an entry
-   * wrapped in `/` is a regular expression.
+   * Paths this plugin leaves alone entirely. An entry is a plain path from the vault root, a glob (`*`, `**`,
+   * `?`, `[abc]`; no `/` matches a name at any depth, a trailing `/` matches folders only), or a `/pattern/flags`
+   * regular expression. Every entry matches case-insensitively.
    */
   public get excludePaths(): string[] {
     return this._pathSettings.excludePaths;
@@ -135,7 +136,7 @@ export class PluginSettings {
 
   private readonly _pathSettings = new PathSettings();
 
-  public isPathIgnored(path: string): boolean {
-    return this._pathSettings.isPathIgnored(path);
+  public isPathIgnored(path: string, isFolder = false): boolean {
+    return this._pathSettings.isPathIgnored(path, isFolder);
   }
 }

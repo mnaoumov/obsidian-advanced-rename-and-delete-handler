@@ -15,6 +15,7 @@ import {
 } from 'vitest';
 
 import { PluginSettingsComponent } from './plugin-settings-component.ts';
+import { PluginSettings } from './plugin-settings.ts';
 
 let app: AppOriginal;
 let saveData: Mock<DataHandler['saveData']>;
@@ -110,6 +111,28 @@ describe('PluginSettingsComponent', () => {
       await component.loadFromFile(false);
 
       expect(component.wasDataFileMissingOnInitialLoad).toBe(true);
+    });
+  });
+
+  describe('path list validation', () => {
+    it('should name an include or exclude entry that is not a valid regular expression', async () => {
+      const component = await loadComponent({});
+      const settings = new PluginSettings();
+      settings.excludePaths = ['/(unclosed/'];
+      settings.includePaths = ['/[/'];
+
+      const result = await component.validate(settings);
+
+      expect(result.excludePaths).toContain('/(unclosed/');
+      expect(result.includePaths).toContain('/[/');
+    });
+
+    it('should accept plain paths, globs and regular expressions with flags', async () => {
+      const component = await loadComponent({});
+      const settings = new PluginSettings();
+      settings.excludePaths = ['Archive', '*.pdf', 'tmp*/', String.raw`/\.locked$/i`];
+
+      expect(await component.validate(settings)).toEqual({});
     });
   });
 

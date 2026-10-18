@@ -91,7 +91,16 @@ describe('DeleteEmptyFoldersCommandHandler', () => {
 
     await asPrivate(handler).execute();
 
-    expect(getSweepParams().isPathIgnored('Archive')).toBe(true);
-    expect(getSweepParams().isPathIgnored('Notes')).toBe(false);
+    expect(getSweepParams().isPathIgnored('Archive', true)).toBe(true);
+    expect(getSweepParams().isPathIgnored('Notes', true)).toBe(false);
+  });
+
+  it('should pass the folder flag through, so a folder-only glob matches the folder itself', async () => {
+    settings.excludePaths = ['tmp*/'];
+
+    await asPrivate(handler).execute();
+
+    expect(getSweepParams().isPathIgnored('tmp-old', true)).toBe(true);
+    expect(getSweepParams().isPathIgnored('tmp-old', false)).toBe(false);
   });
 });

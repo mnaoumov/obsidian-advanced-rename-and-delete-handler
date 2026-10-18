@@ -9,6 +9,7 @@ import {
   isNote,
   isTreatedAsAttachment
 } from '@mnaoumov/obsidian-lib/file-system';
+import { pathsValidator } from '@mnaoumov/obsidian-lib/path-settings';
 
 import { PluginSettings } from './plugin-settings.ts';
 import { EmptyFolderBehavior } from './rename-delete-handler-component.ts';
@@ -136,6 +137,16 @@ export class PluginSettingsComponent extends PluginSettingsComponentBase<PluginS
     }
 
     await super.onLoadRecord(record);
+  }
+
+  /**
+   * Reports an include or exclude entry that is neither a valid glob nor a valid regular expression, naming the entry and
+   * the reason. Without it the library silently falls back to the list's default for the whole list.
+   */
+  protected override registerValidators(): void {
+    super.registerValidators();
+    this.registerValidator('excludePaths', pathsValidator);
+    this.registerValidator('includePaths', pathsValidator);
   }
 }
 

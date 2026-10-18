@@ -64,7 +64,7 @@ export class DeleteEmptyFoldersCommandHandler extends GlobalCommandHandler {
       abortSignal: this.abortSignal,
       app: this.app,
       emptyFolderBehavior: settings.emptyFolderBehavior,
-      isPathIgnored: (path) => settings.isPathIgnored(path),
+      isPathIgnored: (path, isFolder) => settings.isPathIgnored(path, isFolder),
       pluginNoticeComponent: this.pluginNoticeComponent
     });
   }

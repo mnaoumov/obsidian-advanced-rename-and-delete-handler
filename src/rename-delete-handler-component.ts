@@ -155,9 +155,9 @@ export interface RenameDeleteHandlerSettings {
   isNote: (path: string) => boolean;
 
   /**
-   * Whether to ignore the path.
+   * Whether to ignore the path. `isFolder` says the path is a folder, which only a folder-only glob (one ending in `/`) reads.
    */
-  isPathIgnored: (path: string) => boolean;
+  isPathIgnored: (path: string, isFolder?: boolean) => boolean;
 
   /**
    * Whether to delete conflicting attachments.
@@ -373,7 +373,7 @@ class DeleteHandler {
 
     const settings = this.settingsManager.getSettings();
 
-    if (settings.isPathIgnored?.(this.file.path)) {
+    if (settings.isPathIgnored?.(this.file.path, isFolder(this.file))) {
       getLibDebugger('RenameDeleteHandler:handleDelete')(`Skipping delete handler of ${this.file.path} as the path is ignored.`);
       return;
     }
@@ -725,7 +725,7 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
       return false;
     }
 
-    if (settings.isPathIgnored?.(file.path) ?? false) {
+    if (settings.isPathIgnored?.(file.path, true) ?? false) {
       return false;
     }
 
@@ -986,7 +986,7 @@ class MetadataDeletedHandler {
       return;
     }
 
-    if (settings.isPathIgnored?.(this.file.path)) {
+    if (settings.isPathIgnored?.(this.file.path, isFolder(this.file))) {
       getLibDebugger('RenameDeleteHandler:handleMetadataDeleted')(`Skipping metadata delete handler of ${this.file.path} as the path is ignored.`);
       return;
     }
@@ -1605,7 +1605,7 @@ class SettingsManager {
       ...builtSettings,
       emptyFolderBehavior: builtSettings.emptyFolderBehavior ?? EmptyFolderBehavior.Keep,
       isNote: (path: string): boolean => builtSettings.isNote?.(path) ?? isNote(path),
-      isPathIgnored: (path: string): boolean => builtSettings.isPathIgnored?.(path) ?? false
+      isPathIgnored: (path: string, isFolderPath?: boolean): boolean => builtSettings.isPathIgnored?.(path, isFolderPath) ?? false
     };
   }
 

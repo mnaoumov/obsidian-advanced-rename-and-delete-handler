@@ -51,7 +51,7 @@ let getAllFoldersArguments: (boolean | undefined)[] = [];
 interface SweepParams {
   readonly emptyFolderBehavior?: EmptyFolderBehavior;
   readonly folderPaths: string[];
-  readonly isPathIgnored?: (this: void, path: string) => boolean;
+  readonly isPathIgnored?: (this: void, path: string, isFolder: boolean) => boolean;
 }
 
 function createApp(folderPaths: string[]): AppOriginal {
@@ -129,6 +129,19 @@ describe('deleteEmptyFolders', () => {
     });
 
     expect(sweptPaths).toEqual(['kept']);
+  });
+
+  it('should ask the ignore check about a folder, not a file', async () => {
+    const folderFlags: boolean[] = [];
+    await sweep({
+      folderPaths: ['a'],
+      isPathIgnored: (_path, isFolder) => {
+        folderFlags.push(isFolder);
+        return false;
+      }
+    });
+
+    expect(folderFlags).toEqual([true]);
   });
 
   it('should sweep even under Keep, because the user asked for this by name', async () => {
