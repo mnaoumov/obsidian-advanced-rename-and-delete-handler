@@ -73,7 +73,7 @@ Manual equivalent: toggle **Should delete empty note folders** in the plugin's s
 
 The setting above only ever sees the folder a deletion has just emptied. A vault that has been in use for a while is usually carrying others — left by a deletion made before the setting was turned on, or by a move made outside Obsidian — and nothing goes looking for them.
 
-The **Advanced Rename and Delete Handler: Delete empty folders** command is that look. It walks the whole vault, deepest folder first, so a folder holding nothing but empty folders goes in the same pass as its children.
+The **`Advanced Rename and Delete Handler`: Delete empty folders** command is that look. It walks the whole vault, deepest folder first, so a folder holding nothing but empty folders goes in the same pass as its children.
 
 It sweeps whatever **Empty folder behavior** is set to, `Keep` included. That setting decides the fate of a folder emptied *incidentally*, by a deletion you asked for something else; running this command is you naming the folders themselves. A command called `Delete empty folders` that quietly did nothing would be the more surprising answer.
 
@@ -93,7 +93,7 @@ caption: Sweep every empty folder in the vault
 require('/demoSetup.ts').deleteEmptyFolders(app);
 ```
 
-Manual equivalent: run **Advanced Rename and Delete Handler: Delete empty folders** from the Command Palette.
+Manual equivalent: run **`Advanced Rename and Delete Handler`: Delete empty folders** from the Command Palette.
 
 ## When a moved attachment lands on an existing file
 

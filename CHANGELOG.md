@@ -8,7 +8,7 @@
 - chore(github): point questions to Discussions from the new-issue page
 - feat(delete): add shouldDeleteEmptyNoteFolders, off by default
 - ci: merge attesting release assets through the toolkit's reusable workflow
-- build(demo-vault): require CodeScript Toolkit 13.8.0 for the obsidian-lib demo script
+- build(demo-vault): require `CodeScript Toolkit` 13.8.0 for the obsidian-lib demo script
 
 ## 2.2.1
 
