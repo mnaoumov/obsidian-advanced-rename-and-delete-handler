@@ -29,7 +29,7 @@ describe('Renaming a note', () => {
       async callback({ app, lib: { waitUntil } }): Promise<RenameLinkUpdateResult> {
         /*
          * Under the transport's ~30s per-closure cap, not at it. The whole closure is one transport call, so
-         * what bounds it is the SUM of the four budgets below — 25 200 ms — rather than any one of them. They
+         * what bounds it is the SUM of the five budgets below — 25 200 ms — rather than any one of them. They
          * used to read 40 000 / 6000 / 20 000 / 200, which sums to 66 200: more than twice a cap the call
          * would have been killed at first, and reported as a bare transport timeout naming the harness rather
          * than whichever wait overran.
@@ -40,8 +40,9 @@ describe('Renaming a note', () => {
          */
         const BACKLINK_TIMEOUT_IN_MILLISECONDS = 8000;
         const RENAME_SETTLE_IN_MILLISECONDS = 5000;
-        const REWRITE_DEADLINE_IN_MILLISECONDS = 12_000;
+        const REWRITE_DEADLINE_IN_MILLISECONDS = 8000;
         const REWRITE_POLL_INTERVAL_IN_MILLISECONDS = 200;
+        const CACHE_REPARSE_TIMEOUT_IN_MILLISECONDS = 4000;
 
         const stamp = `${Date.now().toString()}-${Math.floor(performance.now()).toString()}`;
         const folder = `rename-links-${stamp}`;
@@ -85,12 +86,30 @@ describe('Renaming a note', () => {
          * Asserted by RESOLVING the link rather than by matching its text: Obsidian rewrites using the
          * vault's configured link format, so a folder-qualified link legitimately comes back as a
          * shortest-path one. A text assertion would fail on a correct rewrite.
+         *
+         * The text on disk changing does not mean the metadata cache has re-parsed it: until it does, the
+         * cache still holds the OLD link, whose target no longer exists, and it resolves to `null`. So the
+         * cached link is waited on first. A timeout here falls through, so a link that never resolves is
+         * still reported by the expectation below rather than as a bare wait failure.
          */
-        const links = app.metadataCache.getFileCache(source)?.links ?? [];
-        const firstLink = links[0];
-        const resolvedLinkPath = firstLink
-          ? app.metadataCache.getFirstLinkpathDest(firstLink.link, sourcePath)?.path ?? null
-          : null;
+        function resolveFirstLink(): null | string {
+          const firstLink = app.metadataCache.getFileCache(source)?.links?.[0];
+          return firstLink
+            ? app.metadataCache.getFirstLinkpathDest(firstLink.link, sourcePath)?.path ?? null
+            : null;
+        }
+
+        try {
+          await waitUntil({
+            message: 'the metadata cache holds the rewritten link',
+            predicate: () => resolveFirstLink() !== null,
+            timeoutInMilliseconds: CACHE_REPARSE_TIMEOUT_IN_MILLISECONDS
+          });
+        } catch {
+          // Reported by the expectation on `resolvedLinkPath`.
+        }
+
+        const resolvedLinkPath = resolveFirstLink();
 
         return { after, before, resolvedLinkPath };
       }
