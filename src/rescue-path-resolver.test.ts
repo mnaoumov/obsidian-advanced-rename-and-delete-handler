@@ -44,7 +44,7 @@ interface CreateResolverOptions {
 }
 
 /**
- * The question @mnaoumov/obsidian-lib puts to Custom Attachment Location's `isAttachmentUnitFolder`.
+ * The question @mnaoumov/obsidian-lib puts to `Custom Attachment Location`'s `isAttachmentUnitFolder`.
  */
 interface IsAttachmentUnitFolderParamsLike {
   readonly folderPath: string;
