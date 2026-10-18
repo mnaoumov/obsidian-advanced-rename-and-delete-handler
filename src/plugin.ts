@@ -226,7 +226,7 @@ export class Plugin extends PluginBase {
             emptyFolderBehavior: settings.emptyFolderBehavior,
             getRescuePath: async (params) => await rescuePathResolver.getRescuePath(params),
             isNote: (path: string): boolean => pluginSettingsComponent.isNoteEx(path),
-            isPathIgnored: (path: string): boolean => settings.isPathIgnored(path),
+            isPathIgnored: (path: string, isFolder?: boolean): boolean => settings.isPathIgnored(path, isFolder),
             shouldDeleteConflictingAttachments: settings.shouldDeleteConflictingAttachments,
             shouldDeleteEmptyNoteFolders: settings.shouldDeleteEmptyNoteFolders,
             shouldHandleDeletions: settings.shouldHandleDeletions,

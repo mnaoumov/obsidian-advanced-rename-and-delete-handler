@@ -329,10 +329,29 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
             desc: createFragment((f) => {
               f.appendText('Handle only the following paths.');
               f.createEl('br');
-              f.appendText('Insert each path on a new line');
+              f.appendText('Insert each entry on a new line. An entry is a path from the vault root such as ');
+              appendCodeBlock(f, 'Archive/Old');
+              f.appendText(', a glob such as ');
+              appendCodeBlock(f, '*.pdf');
+              f.appendText(' or ');
+              appendCodeBlock(f, 'Attachments/**/*.pdf');
+              f.appendText(', or a ');
+              appendCodeBlock(f, '/regular expression/flags');
+              f.appendText('.');
               f.createEl('br');
-              f.appendText('You can use path string or ');
-              appendCodeBlock(f, '/regular expression/');
+              f.appendText('A glob without ');
+              appendCodeBlock(f, '/');
+              f.appendText(' matches a name at any depth, and one ending in ');
+              appendCodeBlock(f, '/');
+              f.appendText(' matches folders only. Every entry matches case-insensitively; escape ');
+              appendCodeBlock(f, '*');
+              f.appendText(', ');
+              appendCodeBlock(f, '?');
+              f.appendText(' or ');
+              appendCodeBlock(f, '[');
+              f.appendText(' with ');
+              appendCodeBlock(f, '\\');
+              f.appendText(' to match it literally.');
               f.createEl('br');
               f.appendText('If the setting is empty, the whole vault is handled.');
             }),
@@ -350,10 +369,29 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
             desc: createFragment((f) => {
               f.appendText('Leave the following paths alone.');
               f.createEl('br');
-              f.appendText('Insert each path on a new line');
+              f.appendText('Insert each entry on a new line. An entry is a path from the vault root such as ');
+              appendCodeBlock(f, 'Archive/Old');
+              f.appendText(', a glob such as ');
+              appendCodeBlock(f, '*.pdf');
+              f.appendText(' or ');
+              appendCodeBlock(f, 'Attachments/**/*.pdf');
+              f.appendText(', or a ');
+              appendCodeBlock(f, '/regular expression/flags');
+              f.appendText('.');
               f.createEl('br');
-              f.appendText('You can use path string or ');
-              appendCodeBlock(f, '/regular expression/');
+              f.appendText('A glob without ');
+              appendCodeBlock(f, '/');
+              f.appendText(' matches a name at any depth, and one ending in ');
+              appendCodeBlock(f, '/');
+              f.appendText(' matches folders only. Every entry matches case-insensitively; escape ');
+              appendCodeBlock(f, '*');
+              f.appendText(', ');
+              appendCodeBlock(f, '?');
+              f.appendText(' or ');
+              appendCodeBlock(f, '[');
+              f.appendText(' with ');
+              appendCodeBlock(f, '\\');
+              f.appendText(' to match it literally.');
               f.createEl('br');
               f.appendText('If the setting is empty, no paths are excluded.');
             }),

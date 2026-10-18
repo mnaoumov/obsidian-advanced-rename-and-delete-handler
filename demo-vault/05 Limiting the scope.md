@@ -7,7 +7,11 @@ By default the plugin handles the whole vault. Two lists narrow that, for the pa
 - `excludePaths`
   - paths the plugin leaves alone. An exclusion wins over an inclusion.
 
-An entry is either a path from the vault root, or a `/regular expression/` between slashes. A path entry matches the folder and everything under it.
+An entry is one of three forms, and every one of them matches case-insensitively:
+
+- a path from the vault root, such as `Archive`, which matches the folder and everything under it;
+- a glob, such as `*.pdf`, `Attachments/**/*.pdf` or `tmp*/`. A glob with no `/` matches a name at any depth, and one ending in `/` matches folders only. Escape `*`, `?` or `[` with `\` to match it literally;
+- a `/regular expression/flags` between slashes.
 
 ```code-button
 ---

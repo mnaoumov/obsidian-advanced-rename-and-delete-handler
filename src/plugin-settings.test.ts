@@ -74,6 +74,22 @@ describe('PluginSettings', () => {
       expect(settings.isPathIgnored('elsewhere/note.md')).toBe(true);
     });
 
+    it('should match an entry case-insensitively', () => {
+      const settings = new PluginSettings();
+      settings.excludePaths = ['Secret'];
+
+      expect(settings.isPathIgnored('secret/note.md')).toBe(true);
+    });
+
+    it('should match a folder-only glob against the folder only when told it is one', () => {
+      const settings = new PluginSettings();
+      settings.excludePaths = ['tmp*/'];
+
+      expect(settings.isPathIgnored('tmp-old', true)).toBe(true);
+      expect(settings.isPathIgnored('tmp-old')).toBe(false);
+      expect(settings.isPathIgnored('tmp-old/note.md')).toBe(true);
+    });
+
     it('should round-trip the path lists through their setters', () => {
       const settings = new PluginSettings();
       settings.excludePaths = ['a'];

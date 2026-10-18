@@ -57,7 +57,7 @@ export interface DeleteEmptyFoldersParams {
   /**
    * Whether a path is outside what this plugin is allowed to touch, per its include/exclude lists.
    */
-  readonly isPathIgnored: (this: void, path: string) => boolean;
+  readonly isPathIgnored: (this: void, path: string, isFolder: boolean) => boolean;
 
   /**
    * Shows the sweep's progress.
@@ -123,9 +123,9 @@ function getDepth(path: string): number {
  * @param isPathIgnored - Whether a path is outside what this plugin may touch.
  * @returns The folder paths to sweep, deepest first.
  */
-function getFolderPathsToSweep(app: App, isPathIgnored: (path: string) => boolean): string[] {
+function getFolderPathsToSweep(app: App, isPathIgnored: (path: string, isFolder: boolean) => boolean): string[] {
   return app.vault.getAllFolders(false)
     .map((folder) => folder.path)
-    .filter((folderPath) => !isPathIgnored(folderPath))
+    .filter((folderPath) => !isPathIgnored(folderPath, true))
     .sort((a, b) => getDepth(b) - getDepth(a) || a.localeCompare(b));
 }
