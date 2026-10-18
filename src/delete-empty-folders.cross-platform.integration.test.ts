@@ -61,6 +61,12 @@ describe('The manual Delete empty folders sweep', () => {
         const POPULATED = `${ROOT}/populated`;
         const POPULATED_NOTE = `${POPULATED}/kept.md`;
         /*
+         * The last of this suite's folders the sweep reaches. The pass runs deepest first and breaks ties on
+         * the path, and `ROOT` is a prefix of this name, so this one is checked AFTER `ROOT`. Its going is
+         * therefore the proof that the sweep has finished with every folder of this fixture.
+         */
+        const SENTINEL_EMPTY = `${ROOT}-sentinel`;
+        /*
          * Under the transport's ~30s per-closure cap, not at it. The old 30_000 was a ceiling this closure
          * could never reach: the transport would kill the whole eval first, and report it as a bare script
          * timeout naming the harness rather than this wait.
@@ -87,18 +93,22 @@ describe('The manual Delete empty folders sweep', () => {
           await app.vault.createFolder(NESTED_EMPTY);
           await app.vault.createFolder(POPULATED);
           await app.vault.create(POPULATED_NOTE, '# Kept\n');
+          await app.vault.createFolder(SENTINEL_EMPTY);
 
           app.commands.executeCommandById(`${pluginId}:delete-empty-folders`);
 
           /*
            * The command is fire-and-forget — its `checkCallback` cannot await — so the sweep is observed by
-           * its effect. The wait is on the PARENT, not the nested folder: the pass runs deepest first, so
-           * the parent is the later of the two, and waiting on the child would let the assertions read the
-           * vault while the parent was still queued.
+           * its effect. The wait is on the sentinel, the last of this fixture's folders the pass reaches.
+           * Waiting on an earlier one let the `finally` below run while the sweep was still on its way to
+           * `ROOT`. The sweep could then read `ROOT` as empty while `rmdir` was halfway through it, and ask
+           * to trash a folder `rmdir` then finished removing. Obsidian's main process logs that failed system
+           * trash as `[Error: Failed to parse path]`, and the harness forwards it to this run's output. The
+           * suite still passed, because `trashSafe` treats a folder that is already gone as deleted.
            */
           await waitUntil({
-            message: 'the sweep removes the empty folder left by its own emptied child',
-            predicate: async () => !await app.vault.adapter.exists(TOP_EMPTY),
+            message: 'the sweep reaches the last folder of this fixture',
+            predicate: async () => !await app.vault.adapter.exists(SENTINEL_EMPTY),
             timeoutInMilliseconds: WAIT_TIMEOUT_IN_MILLISECONDS
           });
 
@@ -113,8 +123,10 @@ describe('The manual Delete empty folders sweep', () => {
            * Through the adapter, as the sibling suites do: a fixture teardown must not travel back through
            * the very delete path this plugin patches, which would make the cleanup part of what is tested.
            */
-          if (await app.vault.adapter.exists(ROOT)) {
-            await app.vault.adapter.rmdir(ROOT, true);
+          for (const folderPath of [ROOT, SENTINEL_EMPTY]) {
+            if (await app.vault.adapter.exists(folderPath)) {
+              await app.vault.adapter.rmdir(folderPath, true);
+            }
           }
         }
       },
