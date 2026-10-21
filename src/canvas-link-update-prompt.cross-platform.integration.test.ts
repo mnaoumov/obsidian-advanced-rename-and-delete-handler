@@ -41,6 +41,7 @@ const SOURCE_PLUGIN_ID = 'obsidian-custom-attachment-location';
 interface CanvasPromptResult {
   readonly hasAttachmentAtNewPath: boolean;
   readonly hasAttachmentAtOldPath: boolean;
+  readonly isAlwaysUpdateLinksOn: boolean;
   readonly linkUpdateSourcePaths: readonly string[];
   readonly promptTexts: readonly string[];
 }
@@ -242,6 +243,12 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
           app.vault.setConfig('attachmentFolderPath', './assets');
           // Obsidian's own default, which the harness overrides for every run: the case under test.
           app.vault.setConfig('alwaysUpdateLinks', false);
+          /*
+           * Saved now rather than on `setConfig`'s debounced schedule. Until the save lands, any write to
+           * `app.json` that does not come through Obsidian's adapter makes it reload the file and take back the
+           * `true` the harness wrote there, and the move then never asks whether to update anything.
+           */
+          await app.vault.saveConfig();
 
           await applySettings({
             shouldHandleRenames: true,
@@ -335,6 +342,7 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
           return {
             hasAttachmentAtNewPath: app.vault.getAbstractFileByPath(DST_ATTACHMENT) !== null,
             hasAttachmentAtOldPath: app.vault.getAbstractFileByPath(SRC_ATTACHMENT) !== null,
+            isAlwaysUpdateLinksOn: app.vault.getConfig('alwaysUpdateLinks') === true,
             linkUpdateSourcePaths,
             promptTexts
           };
@@ -379,6 +387,8 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
       }
     });
 
+    // With the setting back on, no prompt below would prove anything: the case under test never ran.
+    expect(result.isAlwaysUpdateLinksOn, 'alwaysUpdateLinks was on again after the move').toBe(false);
     expect(result.hasAttachmentAtNewPath).toBe(true);
     expect(result.hasAttachmentAtOldPath).toBe(false);
 
