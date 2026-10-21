@@ -59,7 +59,7 @@ interface RenameDeleteHandlerOwner {
  * The plugins that used to carry a rename/delete handler of their own, and the version of each that gave it
  * up.
  *
- * Five of them shipped that handler, from `obsidian-dev-utils`. Two handlers acting on one rename corrupt
+ * Five of them shipped that handler, from the shared library they were built on. Two handlers acting on one rename corrupt
  * links and move attachments twice, and there is no reliable way for this plugin to win that race: the
  * library elects a handler by registry order, but its `runAsyncLinkUpdate` patch sits outside that election,
  * so whichever plugin loaded first keeps a hand on the wheel. Every scheme for seizing control from inside is

@@ -233,7 +233,7 @@ describe('Moving a partial canvas', () => {
         /*
          * Every write that reaches the canvas is recorded with the stack it was made from, and the ones made
          * from this plugin's code are what the guard forbids. Obsidian evaluates a plugin's bundle under the
-         * source URL `plugin:<id>`, so a frame naming it is this plugin — including the `obsidian-dev-utils`
+         * source URL `plugin:<id>`, so a frame naming it is this plugin — including the `@mnaoumov/obsidian-lib`
          * code bundled into it, which is where the guarded rewrite lives. Obsidian's own writes carry
          * `app://obsidian.md` frames only. Both the vault-level and adapter-level entry points are observed, so
          * a write taking either path is seen. Each observer shadows the method with an own property and the
@@ -449,7 +449,7 @@ describe('Moving a partial canvas', () => {
    * The guard-specific half — proving the canvas write is SKIPPED on malformed content rather than Obsidian
    * core performing a valid file-node rewrite — cannot be staged headlessly. It needs `Advanced Canvas`
    * installed and its mid-initialization race hit, where a freshly inserted canvas is transiently `{}`.
-   * Skipped, not silently omitted; the guard itself is unit-covered in `obsidian-dev-utils`
+   * Skipped, not silently omitted; the guard itself is unit-covered in `@mnaoumov/obsidian-lib`
    * (`file-change.test.ts`: `{}` and a partial `{"nodes":[…]}` both skip the write).
    *
    * MANUAL REPRO (real Obsidian, GUI):

@@ -54,7 +54,7 @@ import {
  *
  * WHAT BREAKS THIS SUITE LIVES IN THE LIBRARY, NOT HERE — measured 2026-09-02. Neutralizing this plugin's
  * own foreign-lock skip in `handleRename` leaves it green, because both fixes it actually guards are
- * `obsidian-dev-utils`': re-keying the lock registry when a locked folder is itself renamed, and dropping the
+ * `@mnaoumov/obsidian-lib`'s: re-keying the lock registry when a locked folder is itself renamed, and dropping the
  * phantom old-path registration that supplied the de-duplication. This plugin is the consumer that proves
  * them, which is the whole reason the suite moved here with the behavior. The lock-coverage assertion is
  * live rather than vacuous: weakening the transaction's locks from `subtree` to `file` turns three of the

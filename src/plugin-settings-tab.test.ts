@@ -263,7 +263,7 @@ interface PayloadParams {
 }
 
 /**
- * Broadcasts a plugin finishing its load, exactly as every `obsidian-dev-utils` plugin does.
+ * Broadcasts a plugin finishing its load, exactly as every `@mnaoumov/obsidian-lib` plugin does.
  *
  * @param params - The plugin to announce.
  */

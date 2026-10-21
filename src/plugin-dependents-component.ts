@@ -4,7 +4,7 @@
  * Keeps track of which plugins depend on this one, so the settings tab can say why it is in the vault.
  *
  * Obsidian's manifest has no dependency field, so nothing in the plugin list tells a user that this plugin is
- * load-bearing. A dependent declares the relationship through `obsidian-dev-utils`, and announces it on
+ * load-bearing. A dependent declares the relationship through `@mnaoumov/obsidian-lib`, and announces it on
  * `app.workspace` as the `dependencyPluginIds` of its `plugin-loaded` broadcast — the only place the
  * relationship can be read from this end, since the plugin-API registry only answers from the consumer's side.
  *
