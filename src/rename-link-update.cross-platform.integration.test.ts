@@ -99,7 +99,8 @@ describe('Renaming a note', () => {
          * it collected, asking first unless `alwaysUpdateLinks` is on. A rewrite measures 40-60 ms on
          * the Android emulator, so a link still stale here is a stall, and this says which part stalled.
          * The prompt is reported by its modal rather than by the setting, because the setting read back
-         * here can already have changed: turned off before the rename, it reads `true` again by now.
+         * here need not be the one the rename saw: a write to `app.json` from outside Obsidian's adapter
+         * makes Obsidian reload the file, and that brings back whatever is on disk.
          */
         const { fileManager, metadataCache } = app;
         const cacheState = metadataCache.isCacheClean() ? 'clean' : 'NOT clean';
