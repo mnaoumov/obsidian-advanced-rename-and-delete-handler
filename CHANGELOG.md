@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 3.0.0
+
+- build(deps): clear the brace-expansion, sharp and fast-uri advisories
+- test(rename-link-update): wait for the metadata cache to re-parse the rewritten link
+- test(delete-empty-folders): wait for the sweep to pass the fixture before teardown
+- feat(settings)!: match path entries case-insensitively, as globs or flagged regular expressions
+- docs: mark plugin names as code
+- test(android): rely on the harness's write-loss guard
+- build(deps): bump @mnaoumov/obsidian-lib to 4.3.0
+
 ## 2.3.0
 
 - test(android): re-write files the emulator writes as empty
