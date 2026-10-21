@@ -24,7 +24,7 @@ import {
  *
  * See https://github.com/mnaoumov/obsidian-advanced-note-composer/issues/146.
  *
- * Ported from `obsidian-dev-utils`' own suite, which guards the library's copy of the handler. This plugin
+ * Ported from the library's own suite, which guards `@mnaoumov/obsidian-lib`'s copy of the handler. This plugin
  * ships a FORK of `rename-delete-handler-component.ts` (see AGENTS.md), so the library's test proves nothing
  * about the code that actually runs here — hence this one. It differs from the original in exercising the
  * SHIPPED plugin rather than a hand-built component: the settings go in through the plugin's own

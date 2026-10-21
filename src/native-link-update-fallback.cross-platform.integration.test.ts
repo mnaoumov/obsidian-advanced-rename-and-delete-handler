@@ -26,7 +26,7 @@ import {
  * `obsidian-custom-attachment-location` handed over — that suite drove this same combination and asserted
  * this same rewrite, so the mechanism was folded in here rather than landed as a second copy of it.
  *
- * Ported from `obsidian-dev-utils`' own suite for the reason set out in
+ * Ported from `@mnaoumov/obsidian-lib`'s own suite for the reason set out in
  * `foreign-lock-non-interference.cross-platform.integration.test.ts`: this plugin ships a FORK of
  * `rename-delete-handler-component.ts`, so the library's copy of this test guards different code. Each case
  * repeats its own settings helper because an `evalInObsidian` callback is serialized and reaches nothing

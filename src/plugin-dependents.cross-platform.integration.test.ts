@@ -11,7 +11,7 @@ import {
  * button to its settings.
  *
  * The dependent is the broadcast itself rather than an installed plugin. That broadcast is the contract — any
- * plugin built on `obsidian-dev-utils` 101.7 or later makes exactly this call once its dependency gate has
+ * plugin built on `@mnaoumov/obsidian-lib` makes exactly this call once its dependency gate has
  * opened — and staging it directly keeps this suite independent of another plugin's release. The id it
  * announces is Obsidian's own `editor` settings tab, so the button has a real tab to open and the suite can
  * see that it opened.

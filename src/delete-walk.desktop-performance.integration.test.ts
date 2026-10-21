@@ -25,13 +25,13 @@ import {
  * `DeleteProtectionPatchComponent`: a pre-scan asking which attachments are still used, the unit-folder rescue
  * pre-pass asking again, and then the library's `deleteIfNotUsed` walking the folder. The first two are this
  * plugin's own `findSurvivingNotePaths` lookups; the third is the library's `deleteIfNotUsed`, once per file it
- * visits. All three call the library's `getBacklinksForFileSafe`, and since `obsidian-dev-utils` 107.0.0 that
+ * visits. All three call the library's `getBacklinksForFileSafe`, which
  * answers from the library's own backlink index rather than from an `iterateAllRefs` walk.
  *
  * The fixture is A embedded attachments plus one unlinked one. Each pre-pass asks once per non-note file and the
  * library once per file it visits, so a lookup falling back to a walk shows up as A + 1 walks or more. Measured
- * with A = 20: 43 walks on `obsidian-dev-utils` 105.0.0 before the pre-passes went through the index, 1 after
- * them, and 0 on 107.0.0 (2026-09-25).
+ * with A = 20: 43 walks before the pre-passes went through the index, 1 after
+ * them, and 0 once the library's own walk did too (2026-09-25).
  *
  * The library visits every child of the folder, keeping the attachments the holder still embeds and deleting the
  * unlinked `unused.png`, so the suite asserts that file is gone as well as that the rest stayed.

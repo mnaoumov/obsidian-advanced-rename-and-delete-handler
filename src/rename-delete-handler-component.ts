@@ -865,7 +865,7 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * 2% of a 20-file folder rename with it on, 0.03% of a 1000-file one. Those last two shares were measured
    * while this handler still made two backlink lookups per renamed file through Obsidian's `getBacklinksForFile`,
    * which is the same full `iterateAllRefs` walk, so a folder rename walked the vault 2F+1 times. The lookups now
-   * go through `obsidian-dev-utils`' backlink helpers, whose index resolves only the references of the notes
+   * go through `@mnaoumov/obsidian-lib`'s backlink helpers, whose index resolves only the references of the notes
    * that could hold a backlink, so this walk is the only one left in a rename and its share of one has grown
    * accordingly. It is still one walk per `renameFile`.
    *
@@ -1585,7 +1585,7 @@ class RenameMap {
  * Resolves the settings the handler runs with.
  *
  * There is exactly one contributor — this plugin — which is the whole point of the plugin existing. The
- * version of this code that lived in `obsidian-dev-utils` had to aggregate a registry of contributors and
+ * library's version of this code had to aggregate a registry of contributors and
  * OR-merge their answers, because every consumer plugin brought its own; here that registry is gone, and
  * so is any question of whose setting wins.
  *
