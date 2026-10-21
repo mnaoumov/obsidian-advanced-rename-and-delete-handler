@@ -7,7 +7,8 @@ import {
 
 /*
  * The plugin's central promise, end to end against a real Obsidian: renaming a note rewrites the links
- * pointing at it, and the plugin is the one doing the rewriting.
+ * pointing at it. The suite writes no settings, so it runs on the defaults, where `shouldHandleRenames` is
+ * off and Obsidian does the rewriting: what it pins is that the plugin, loaded, does not get in the way.
  *
  * `app.fileManager.renameFile`'s promise can linger on `metadataCache.onCleanCache` in the headless
  * harness, so it is raced against a timeout and the observable effect is polled instead — the same shape
@@ -21,6 +22,7 @@ interface RenameLinkUpdateResult {
   readonly after: string;
   readonly before: string;
   readonly resolvedLinkPath: null | string;
+  readonly stallReport: string;
 }
 
 describe('Renaming a note', () => {
@@ -62,25 +64,58 @@ describe('Renaming a note', () => {
 
         const before = await app.vault.read(source);
 
-        const renamePromise = app.fileManager.renameFile(target, renamedTargetPath);
-        await Promise.race([
-          renamePromise.catch(() => {
-            // Lingering `onCleanCache`; the effect is polled below.
-          }),
-          sleep(RENAME_SETTLE_IN_MILLISECONDS)
-        ]);
+        let renameOutcome = 'still pending';
+        const renamePromise = app.fileManager.renameFile(target, renamedTargetPath)
+          .then(() => {
+            renameOutcome = 'resolved';
+          })
+          .catch((error: unknown) => {
+            renameOutcome = `rejected: ${String(error)}`;
+          });
+        await Promise.race([renamePromise, sleep(RENAME_SETTLE_IN_MILLISECONDS)]);
 
-        // Polled rather than awaited, so a stale link is reported as a failed expectation with both
-        // texts attached rather than as an opaque timeout.
+        /*
+         * Polled rather than awaited, so a stale link is reported as a failed expectation with both
+         * texts attached rather than as an opaque timeout. The longest gap between two polls is kept
+         * because a renderer that froze past the deadline also reads as a link that was never rewritten.
+         */
         const deadline = Date.now() + REWRITE_DEADLINE_IN_MILLISECONDS;
+        let lastPollTime = Date.now();
+        let longestPollGapInMilliseconds = 0;
         while (Date.now() < deadline) {
           if ((await app.vault.read(source)) !== before) {
             break;
           }
           await sleep(REWRITE_POLL_INTERVAL_IN_MILLISECONDS);
+          longestPollGapInMilliseconds = Math.max(longestPollGapInMilliseconds, Date.now() - lastPollTime);
+          lastPollTime = Date.now();
         }
 
         const after = await app.vault.read(source);
+
+        /*
+         * With the plugin's default settings the rewrite is Obsidian's own: `renameFile` queues a link
+         * update on `fileManager`, which waits for a clean metadata cache and then rewrites every link
+         * it collected, asking first unless `alwaysUpdateLinks` is on. A rewrite measures 40-60 ms on
+         * the Android emulator, so a link still stale here is a stall, and this says which part stalled.
+         * The prompt is reported by its modal rather than by the setting, because the setting read back
+         * here can already have changed: turned off before the rename, it reads `true` again by now.
+         */
+        const { fileManager, metadataCache } = app;
+        const cacheState = metadataCache.isCacheClean() ? 'clean' : 'NOT clean';
+        const taskCount = String(metadataCache.inProgressTaskCount);
+        const resolutionCount = String(metadataCache.linkResolverQueue?.items.length ?? 0);
+        const waiterCount = String(metadataCache.onCleanCacheCallbacks.length);
+        const stallReport = after === before
+          ? [
+            `renameFile ${renameOutcome}`,
+            `target at ${target.path}`,
+            `metadata cache ${cacheState} (${taskCount} task(s) in progress, ${resolutionCount} link resolution(s) queued, ${waiterCount} waiter(s))`,
+            `link update ${fileManager.inProgressUpdates === null ? 'not running' : 'running'}`,
+            `modal ${document.querySelector('.modal-container')?.textContent ?? 'none'}`,
+            `longest gap between polls ${String(longestPollGapInMilliseconds)} ms`
+          ].join('; ')
+          : '';
 
         /*
          * Asserted by RESOLVING the link rather than by matching its text: Obsidian rewrites using the
@@ -111,11 +146,11 @@ describe('Renaming a note', () => {
 
         const resolvedLinkPath = resolveFirstLink();
 
-        return { after, before, resolvedLinkPath };
+        return { after, before, resolvedLinkPath, stallReport };
       }
     });
 
-    expect(result.after).not.toBe(result.before);
+    expect(result.after, result.stallReport).not.toBe(result.before);
     expect(result.resolvedLinkPath).toMatch(/renamed-/);
   });
 });
