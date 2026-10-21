@@ -34,7 +34,7 @@
 
 ## 2.1.2
 
-- fix(rename): move a shared attachment with the last of its notes
+- fix(rename): move a shared attachment with the last of its notes (re #5 - Batch-moving all referencing notes leaves shared attachments behind)
 
 ## 2.1.1
 
