@@ -64,7 +64,7 @@ import {
   registerFileCacheForNonExistingFile,
   registerFiles
 } from '@mnaoumov/obsidian-lib/metadata-cache';
-import { getObsidianDevUtilsState } from '@mnaoumov/obsidian-lib/obsidian-dev-utils-state';
+import { getObsidianLibState } from '@mnaoumov/obsidian-lib/obsidian-lib-state';
 import { addToQueue } from '@mnaoumov/obsidian-lib/queue';
 import { isResourceLockedForPathByAncestor } from '@mnaoumov/obsidian-lib/resource-lock';
 import {
@@ -1063,8 +1063,8 @@ class RenameHandler {
 
     const pluginNoticeComponent = this.pluginNoticeComponent;
 
-    const renamedFilePaths = getObsidianDevUtilsState('renamedFilePaths', new Set<string>()).value;
-    const renamedLinks = getObsidianDevUtilsState('renamedLinkPaths', new Set<string>()).value;
+    const renamedFilePaths = getObsidianLibState('renamedFilePaths', new Set<string>()).value;
+    const renamedLinks = getObsidianLibState('renamedLinkPaths', new Set<string>()).value;
 
     try {
       const renameMap = new RenameMap({

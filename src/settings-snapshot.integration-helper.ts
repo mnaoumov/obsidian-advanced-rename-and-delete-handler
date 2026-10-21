@@ -66,7 +66,7 @@ interface MigrateSettingsResultLike {
   readonly isApplied: boolean;
 }
 
-interface ObsidianDevUtilsStateLike {
+interface ObsidianLibStateLike {
   readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
 }
 
@@ -80,7 +80,7 @@ interface PluginApiLike {
  * that library's Plugin API protocol guide freezes, so a suite reaches the plugin the way a consumer does.
  */
 interface PluginApiRegistryHostLike {
-  readonly __obsidianDevUtils?: ObsidianDevUtilsStateLike;
+  readonly __obsidianLib?: ObsidianLibStateLike;
 }
 
 interface PluginApiRegistryLike {
@@ -108,7 +108,7 @@ export async function readPluginSettings(): Promise<PluginSettingsSnapshot> {
     callback({
       pluginId
     }): PluginSettingsSnapshot {
-      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]
         ?.find((candidate) => !candidate.isRevoked);
       if (!apiRecord) {
         throw new Error(`${pluginId} has published no API`);
@@ -141,7 +141,7 @@ export async function writePluginSettings(snapshot: PluginSettingsSnapshot): Pro
       sourcePluginId,
       waitTimeoutInMilliseconds
     }): Promise<void> {
-      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]
         ?.find((candidate) => !candidate.isRevoked);
       if (!apiRecord) {
         throw new Error(`${pluginId} has published no API`);
