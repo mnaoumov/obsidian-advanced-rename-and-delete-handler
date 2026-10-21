@@ -57,7 +57,7 @@ Beside it, [`api-contract.ts`](./api-contract.ts) holds the published API's cont
 
 This plugin owns those settings, so it owns the dialog too: your proposal is shown next to the current values, and the user approves, edits or declines it row by row. Nothing is written unless they press OK.
 
-The API is published through the `@mnaoumov/obsidian-lib` cross-plugin registry (the same registry `obsidian-dev-utils` plugins use), which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first. The contract version is `1.2.0` and moves independently of the plugin's own version; ask for `'^1'`.
+The API is published through the `@mnaoumov/obsidian-lib` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first. The contract version is `1.2.0` and moves independently of the plugin's own version; ask for `'^1'`.
 
 If your plugin already uses [`@mnaoumov/obsidian-lib`](https://mnaoumov.dev/obsidian-lib/guides/cross-plugin-apis/), `watchPluginApi` is the whole of it:
 

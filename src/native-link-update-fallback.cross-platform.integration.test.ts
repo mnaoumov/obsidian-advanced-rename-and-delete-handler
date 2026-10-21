@@ -66,7 +66,7 @@ interface NativeLinkUpdateResult {
   readonly referencingNoteContent: string;
 }
 
-interface ObsidianDevUtilsStateLike {
+interface ObsidianLibStateLike {
   readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
 }
 
@@ -75,7 +75,7 @@ interface ObsidianDevUtilsStateLike {
  * that library's Plugin API protocol guide freezes, so a suite reaches the plugin the way a consumer does.
  */
 interface PluginApiRegistryHostLike {
-  readonly __obsidianDevUtils?: ObsidianDevUtilsStateLike;
+  readonly __obsidianLib?: ObsidianLibStateLike;
 }
 
 interface PluginApiRegistryLike {
@@ -137,7 +137,7 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
         // Short enough to catch the phantom window below, which is only open across a couple of awaits.
         const PHANTOM_SAMPLE_INTERVAL_IN_MILLISECONDS = 5;
 
-        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]
           ?.find((candidate) => !candidate.isRevoked);
         if (!apiRecord) {
           throw new Error(`${pluginId} has published no API`);
@@ -324,7 +324,7 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
          */
         const WAIT_TIMEOUT_IN_MILLISECONDS = 7000;
 
-        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]
           ?.find((candidate) => !candidate.isRevoked);
         if (!apiRecord) {
           throw new Error(`${pluginId} has published no API`);

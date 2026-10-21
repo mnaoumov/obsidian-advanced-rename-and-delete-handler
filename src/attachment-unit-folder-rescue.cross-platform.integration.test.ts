@@ -87,7 +87,7 @@ interface MigrationApiLike {
  */
 type NotePathOrFileLike = null | PathHolderLike | string;
 
-interface ObsidianDevUtilsStateLike {
+interface ObsidianLibStateLike {
   readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
 }
 
@@ -103,7 +103,7 @@ interface PathHolderLike {
  * that library's Plugin API protocol guide freezes, so a suite reaches the plugin the way a consumer does.
  */
 interface PluginApiRegistryHostLike {
-  readonly __obsidianDevUtils?: ObsidianDevUtilsStateLike;
+  readonly __obsidianLib?: ObsidianLibStateLike;
 }
 
 interface PluginApiRegistryLike {
@@ -184,7 +184,7 @@ describe('Deleting a folder whose attachment belongs to an attachment unit folde
         const WAIT_TIMEOUT_IN_MILLISECONDS = 12_000;
         const EXPECTED_BACKLINK_COUNT = 2;
 
-        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]
           ?.find((candidate) => !candidate.isRevoked);
         if (!apiRecord) {
           throw new Error(`${pluginId} has published no API`);
@@ -389,7 +389,7 @@ describe('Deleting a folder whose attachment belongs to an attachment unit folde
         const WAIT_TIMEOUT_IN_MILLISECONDS = 12_000;
         const EXPECTED_BACKLINK_COUNT = 2;
 
-        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+        const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]
           ?.find((candidate) => !candidate.isRevoked);
         if (!apiRecord) {
           throw new Error(`${pluginId} has published no API`);

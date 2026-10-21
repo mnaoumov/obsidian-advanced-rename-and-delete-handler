@@ -109,7 +109,7 @@ describe('A plugin that declares this one as a dependency', () => {
           const isHeadingShownBefore = isHeadingShown();
           await closeSettings();
 
-          app.workspace.trigger('obsidian-dev-utils:plugin-loaded', payload);
+          app.workspace.trigger('obsidian-lib:plugin-loaded', payload);
           await openOwnTab();
           await waitUntil({
             message: 'the dependents group appears',
@@ -130,7 +130,7 @@ describe('A plugin that declares this one as a dependency', () => {
           const openedTabId = app.setting.activeTab?.id ?? '';
           await closeSettings();
 
-          app.workspace.trigger('obsidian-dev-utils:plugin-unloaded', payload);
+          app.workspace.trigger('obsidian-lib:plugin-unloaded', payload);
           await openOwnTab();
           const isHeadingShownAfterUnload = isHeadingShown();
 
@@ -142,7 +142,7 @@ describe('A plugin that declares this one as a dependency', () => {
           };
         } finally {
           // Unloaded even when an assertion above threw, so no later suite inherits a phantom dependent.
-          app.workspace.trigger('obsidian-dev-utils:plugin-unloaded', payload);
+          app.workspace.trigger('obsidian-lib:plugin-unloaded', payload);
           app.setting.close();
         }
       },

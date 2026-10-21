@@ -48,7 +48,7 @@ interface FirstLoadProbeResult {
   readonly openedTabId: string;
 }
 
-// The one field of the `obsidian-dev-utils:plugin-loaded` payload this suite reads.
+// The one field of the `obsidian-lib:plugin-loaded` payload this suite reads.
 interface PluginLoadedPayloadLike {
   readonly pluginId: string;
 }
@@ -100,7 +100,7 @@ describe('Loading into a vault with no data.json for this plugin', () => {
          */
         async function reloadPlugin(prepare: () => Promise<void>): Promise<void> {
           let isLoaded = false;
-          const eventRef = app.workspace.on('obsidian-dev-utils:plugin-loaded', (payload: PluginLoadedPayloadLike) => {
+          const eventRef = app.workspace.on('obsidian-lib:plugin-loaded', (payload: PluginLoadedPayloadLike) => {
             if (payload.pluginId === pluginId) {
               isLoaded = true;
             }

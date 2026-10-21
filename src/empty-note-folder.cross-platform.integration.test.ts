@@ -60,7 +60,7 @@ interface MigrationApiLike {
   migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
-interface ObsidianDevUtilsStateLike {
+interface ObsidianLibStateLike {
   readonly pluginApiRegistry?: PluginApiRegistryWrapperLike;
 }
 
@@ -69,7 +69,7 @@ interface ObsidianDevUtilsStateLike {
  * that library's Plugin API protocol guide freezes, so a suite reaches the plugin the way a consumer does.
  */
 interface PluginApiRegistryHostLike {
-  readonly __obsidianDevUtils?: ObsidianDevUtilsStateLike;
+  readonly __obsidianLib?: ObsidianLibStateLike;
 }
 
 interface PluginApiRegistryLike {
@@ -123,7 +123,7 @@ async function runDeleteNote(input: DeleteNoteInput): Promise<DeleteNoteResult> 
        */
       const WAIT_TIMEOUT_IN_MILLISECONDS = 8000;
 
-      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianDevUtils?.pluginApiRegistry?.value?.records?.[pluginId]
+      const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]
         ?.find((candidate) => !candidate.isRevoked);
       if (!apiRecord) {
         throw new Error(`${pluginId} has published no API`);
