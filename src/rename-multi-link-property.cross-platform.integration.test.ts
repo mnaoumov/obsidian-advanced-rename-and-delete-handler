@@ -191,14 +191,16 @@ describe('Renaming notes linked from inside a multi-link frontmatter value', () 
           const contributedKeys = new Set(multiValueFrontmatterLinks.map((reference) => reference.key));
           cache.frontmatterLinks = (cache.frontmatterLinks ?? []).filter((link) => !contributedKeys.has(link.key));
           for (const reference of multiValueFrontmatterLinks) {
-            cache.frontmatterLinks.push({
-              displayText: reference.displayText,
-              endOffset: reference.endOffset,
-              key: reference.key,
-              link: reference.link,
-              original: reference.original,
-              startOffset: reference.startOffset
-            } as (typeof cache.frontmatterLinks)[number]);
+            cache.frontmatterLinks.push(
+              {
+                displayText: reference.displayText,
+                endOffset: reference.endOffset,
+                key: reference.key,
+                link: reference.link,
+                original: reference.original,
+                startOffset: reference.startOffset
+              } as (typeof cache.frontmatterLinks)[number]
+            );
           }
 
           app.metadataCache.resolveLinks(SOURCE_NOTE);
