@@ -65,7 +65,7 @@ const SCENARIO_TIMEOUT_IN_MS = 300_000;
 // Time to wait for Obsidian's startup scan to index both bulk folders before deleting. The poll interval is `pollInObsidian`'s own 500 ms default, which is what this file used to spell out.
 const INDEX_WAIT_IN_MS = 60_000;
 
-// Time to wait for the dev-utils operation queue to drain the per-note delete handlers.
+// Time to wait for the obsidian-lib operation queue to drain the per-note delete handlers.
 const QUEUE_DRAIN_WAIT_IN_MS = 180_000;
 const QUEUE_DRAIN_POLL_IN_MS = 100;
 
@@ -408,7 +408,7 @@ describe('bulk-deletion delete-handler bottleneck', () => {
    * handler resolves nothing.
    *
    * To prove the synthetic handlers actually RAN (rather than asserting zero against work that
-   * never started), it enqueues a single REAL deletion LAST as a drain marker. The dev-utils
+   * never started), it enqueues a single REAL deletion LAST as a drain marker. The obsidian-lib
    * operation queue is strictly serial/FIFO, so once the marker's resolution is observed every
    * prior synthetic handler has already drained. The resolver stub buckets calls by note path,
    * so the marker's one resolution is distinguishable from any (regression-only) synthetic one.
