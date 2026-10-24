@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 3.0.1
+
+- test(canvas): stop counting Obsidian's handed-back canvas write as the plugin's
+- fix(demo-vault): keep one `CodeScript Toolkit` minVersion, the 15.0.0 floor
+- test(demo-vault): floor `CodeScript Toolkit` at 15.0.0
+- style: format the multi-link property integration test so the gate passes
+- docs: name obsidian-lib where comments said dev-utils
+- docs: shorten the debugging section
+- docs(changelog): name the issue each released entry resolved
+- fix: update every link inside a multi-link frontmatter value on rename
+- docs: point the remaining obsidian-dev-utils mentions at obsidian-lib
+- docs(readme): lead the Debugging section with `Advanced Debug Mode`
+- test(canvas-link-update-prompt): keep alwaysUpdateLinks off for the whole move, or say it was not
+- test(rename-link-update): report which part stalled when the link stays stale
+
 ## 3.0.0
 
 - build(deps): clear the brace-expansion, sharp and fast-uri advisories
