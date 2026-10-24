@@ -234,12 +234,26 @@ describe('Moving a partial canvas', () => {
          * Every write that reaches the canvas is recorded with the stack it was made from, and the ones made
          * from this plugin's code are what the guard forbids. Obsidian evaluates a plugin's bundle under the
          * source URL `plugin:<id>`, so a frame naming it is this plugin — including the `@mnaoumov/obsidian-lib`
-         * code bundled into it, which is where the guarded rewrite lives. Obsidian's own writes carry
-         * `app://obsidian.md` frames only. Both the vault-level and adapter-level entry points are observed, so
-         * a write taking either path is seen. Each observer shadows the method with an own property and the
-         * `finally` removes it again, so the next suite on this shared instance meets the vault untouched.
+         * code bundled into it, which is where the guarded rewrite lives. A write is attributed to its CALLER, the
+         * first frame below the observers (which run as `<anonymous>`), not to any frame anywhere on the stack: the
+         * handler hands canvas link updates back through `updateAllLinksWithoutPrompt`, so Obsidian's own
+         * `applyUpdates` rewrite carries this plugin's frame a few levels down, and whether that frame fell inside
+         * the 10-frame stack limit decided whether the suite failed. Both the vault-level and adapter-level entry
+         * points are observed, so a write taking either path is seen. Each observer shadows the method with an own
+         * property and the `finally` removes it again, so the next suite on this shared instance meets the vault
+         * untouched.
          */
         const pluginFrameMarker = `plugin:${pluginId}:`;
+
+        /**
+         * Reads the frame that made a write: the first one below the message line that is not an observer's.
+         *
+         * @param stack - The stack captured inside the observer.
+         * @returns The caller's frame, or an empty string when the stack holds none.
+         */
+        function getCallerFrame(stack: string): string {
+          return stack.split('\n').slice(1).find((frame) => !frame.includes('<anonymous>')) ?? '';
+        }
         const pluginCanvasWriteStacks: string[] = [];
         const writeObserverRemovers: (() => void)[] = [];
 
@@ -258,7 +272,7 @@ describe('Moving a partial canvas', () => {
               const path = getPath(methodArguments[0]);
               if (path.endsWith('.canvas')) {
                 const stack = new Error(`${methodName} of ${path}`).stack ?? '';
-                if (stack.includes(pluginFrameMarker)) {
+                if (getCallerFrame(stack).includes(pluginFrameMarker)) {
                   pluginCanvasWriteStacks.push(stack);
                 }
               }
