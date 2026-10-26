@@ -39,6 +39,7 @@ const EXPECTED_PROPERTY_NAMES = [
   'shouldRenameAttachmentFolder',
   'shouldRenameAttachmentFiles',
   'shouldDeleteConflictingAttachments',
+  'shouldShowLinkUpdateNotice',
   'shouldHandleDeletions',
   'emptyFolderBehavior',
   'shouldDeleteEmptyNoteFolders',

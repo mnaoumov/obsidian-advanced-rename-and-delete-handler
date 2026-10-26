@@ -191,6 +191,11 @@ export interface RenameDeleteHandlerSettings {
   shouldRenameAttachmentFolder: boolean;
 
   /**
+   * Whether to show the `Updated N links in M files.` notice after a rename updated links. Absent means shown.
+   */
+  shouldShowLinkUpdateNotice: boolean;
+
+  /**
    * Whether to update file name aliases when a note is renamed.
    */
   shouldUpdateFileNameAliases: boolean;
@@ -1237,6 +1242,13 @@ class RenameHandler {
           }
 
           if (renamedLinks.size === 0) {
+            return;
+          }
+          // Read at drain time, so a toggle flipped mid-batch applies to the notice still pending. The counters
+          // are cleared either way, or the next rename that does show a notice would report this one's links too.
+          if (this.settingsManager.getSettings().shouldShowLinkUpdateNotice === false) {
+            renamedFilePaths.clear();
+            renamedLinks.clear();
             return;
           }
           pluginNoticeComponent.showNotice(`Updated ${pluralize(renamedLinks.size, 'link')} in ${pluralize(renamedFilePaths.size, 'file')}.`);

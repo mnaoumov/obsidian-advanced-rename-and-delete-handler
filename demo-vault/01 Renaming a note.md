@@ -62,6 +62,25 @@ caption: Rewrite link text again (the default)
 await require('/demoSetup.ts').changeSettings(app, { shouldUpdateFileNameAliases: true });
 ```
 
+Each rename above ended with a notice from this plugin saying how many links it updated in how many files. A batch of renames, say from a script, leaves one of those per rename. Turn it off and rename again: the links are still updated, and only the demo's own notice appears. Warnings and errors still show either way.
+
+- `shouldShowLinkUpdateNotice`
+  - whether a rename or move that updated links ends with that notice. On by default.
+
+```code-button
+---
+caption: Stop the link update notice
+---
+await require('/demoSetup.ts').changeSettings(app, { shouldShowLinkUpdateNotice: false });
+```
+
+```code-button
+---
+caption: Show the link update notice again (the default)
+---
+await require('/demoSetup.ts').changeSettings(app, { shouldShowLinkUpdateNotice: true });
+```
+
 ## Attachments travel with the note
 
 Moving a note to another folder is a rename as far as Obsidian is concerned, and the files that belong to that note should go with it. The destination is `Archive/`, which already holds one note — [Kept](<./Archive/Kept.md>) — so the folder exists before anything moves into it.

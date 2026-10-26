@@ -33,6 +33,7 @@ interface DemoSettingsPatch {
   shouldRenameAttachmentFiles?: boolean;
   shouldRenameAttachmentFolder?: boolean;
   shouldRescueSharedAttachments?: boolean;
+  shouldShowLinkUpdateNotice?: boolean;
   shouldUpdateFileNameAliases?: boolean;
   treatAsAttachmentExtensions?: string[];
 }

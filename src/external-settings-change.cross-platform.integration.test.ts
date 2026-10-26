@@ -24,8 +24,10 @@ import {
  * `raw` watcher notices it, and its debounced config-file check calls `onExternalSettingsChange`. Every
  * `saveData` the plugin makes from then on is recorded with its stack, so a failure names the writer.
  *
- * It uses the reporter's `data.json` verbatim. The plugin serializes those settings to exactly the 587 bytes the
- * report quotes, so this is the file the loop was seen on, not an approximation of it.
+ * It uses the reporter's `data.json` verbatim, plus every setting added since. The plugin serialized those settings
+ * to exactly the 587 bytes the report quotes, so this is the file the loop was seen on, not an approximation of it.
+ * A setting added later has to be added here too: a file missing a key is normalized by one write, which this
+ * suite reports as the loop.
  *
  * Cross-platform: Sync runs on phones too.
  */
@@ -45,6 +47,8 @@ const REPORTED_DATA = {
   shouldRenameAttachmentFiles: false,
   shouldRenameAttachmentFolder: false,
   shouldRescueSharedAttachments: false,
+  // Added in issue #8, after the report.
+  shouldShowLinkUpdateNotice: true,
   shouldUpdateFileNameAliases: true,
   treatAsAttachmentExtensions: ['.excalidraw.md']
 };
