@@ -171,6 +171,22 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
                 });
               });
             }
+          }),
+          this.settingEx({
+            desc: createFragment((f) => {
+              f.appendText('Whether a rename or move that updated links ends with a notice saying how many links in how many files.');
+              f.createEl('br');
+              f.appendText('When disabled, a successful rename shows nothing. Warnings and errors still show.');
+            }),
+            name: 'Should show link update notice',
+            render: (setting) => {
+              setting.addToggle((toggle) => {
+                this.bind({
+                  propertyName: 'shouldShowLinkUpdateNotice',
+                  valueComponent: toggle
+                });
+              });
+            }
           })
         ]
       }),

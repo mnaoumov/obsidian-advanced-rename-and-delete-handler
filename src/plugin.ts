@@ -233,6 +233,7 @@ export class Plugin extends PluginBase {
             shouldHandleRenames: settings.shouldHandleRenames,
             shouldRenameAttachmentFiles: settings.shouldRenameAttachmentFiles,
             shouldRenameAttachmentFolder: settings.shouldRenameAttachmentFolder,
+            shouldShowLinkUpdateNotice: settings.shouldShowLinkUpdateNotice,
             shouldUpdateFileNameAliases: settings.shouldUpdateFileNameAliases
           };
         }

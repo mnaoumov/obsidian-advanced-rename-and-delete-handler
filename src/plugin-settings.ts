@@ -97,6 +97,14 @@ export class PluginSettings {
   public shouldRescueSharedAttachments = false;
 
   /**
+   * Whether a rename or move that updated links ends with an `Updated N links in M files.` notice.
+   *
+   * On by default, because that is what every release before this setting did. It silences only that success
+   * notice: warnings and errors still show. Not in the published API, since no consumer ever owned it.
+   */
+  public shouldShowLinkUpdateNotice = true;
+
+  /**
    * Whether renaming a note rewrites the display text of the links that pointed at its old name.
    */
   public shouldUpdateFileNameAliases = true;
