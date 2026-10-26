@@ -50,6 +50,11 @@ interface MigrationApiLike {
 }
 
 interface MultiLinkPropertyRenameResult {
+  /**
+   * What the first rewrite was generated against: the vault's link format, and every file the new shortest name
+   * resolves to. A full-path rewrite is what either an `absolute` format or a second match produces.
+   */
+  readonly linkContextAfterFirstRename: string;
   readonly valueAfterFirstRename: unknown;
   readonly valueAfterSecondRename: unknown;
   readonly valueBefore: unknown;
@@ -217,6 +222,7 @@ describe('Renaming notes linked from inside a multi-link frontmatter value', () 
         }
 
         const originalAlwaysUpdateLinks = app.vault.getConfig('alwaysUpdateLinks');
+        const originalNewLinkFormat = app.vault.getConfig('newLinkFormat');
         const changedEventRef = app.metadataCache.on('changed', (file) => {
           if (file.path === SOURCE_NOTE) {
             contributeMultiValueLinks();
@@ -225,6 +231,13 @@ describe('Renaming notes linked from inside a multi-link frontmatter value', () 
 
         try {
           app.vault.setConfig('alwaysUpdateLinks', true);
+          /*
+           * The expected values are shortest-form links, so the format is stated here rather than inherited from
+           * the suites before this one, three of which switch it to `absolute`. Saved at once: until the save
+           * lands, a reload of `app.json` can bring back whatever an earlier suite left on disk.
+           */
+          app.vault.setConfig('newLinkFormat', 'shortest');
+          await app.vault.saveConfig();
           await applySettings({ shouldHandleRenames: true });
 
           await app.vault.createFolder(FOLDER);
@@ -253,6 +266,9 @@ describe('Renaming notes linked from inside a multi-link frontmatter value', () 
           });
           await flushQueue();
           const valueAfterFirstRename = await readValue();
+          const shortestNameMatches = app.metadataCache.getLinkpathDest('renamed multi a', SOURCE_NOTE).map((file) => file.path);
+          const linkContextAfterFirstRename = `newLinkFormat: ${String(app.vault.getConfig('newLinkFormat'))}; `
+            + `'renamed multi a' resolves to: ${shortestNameMatches.join(', ') || '(nothing)'}`;
 
           await waitUntil({
             message: 'the rewritten source note is cached with its multi-value links again',
@@ -273,6 +289,7 @@ describe('Renaming notes linked from inside a multi-link frontmatter value', () 
           const valueAfterSecondRename = await readValue();
 
           return {
+            linkContextAfterFirstRename,
             valueAfterFirstRename,
             valueAfterSecondRename,
             valueBefore
@@ -280,6 +297,8 @@ describe('Renaming notes linked from inside a multi-link frontmatter value', () 
         } finally {
           app.metadataCache.offref(changedEventRef);
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
+          app.vault.setConfig('newLinkFormat', originalNewLinkFormat);
+          await app.vault.saveConfig();
           // Through the adapter, so the teardown does not travel back through the delete path this plugin patches.
           if (await app.vault.adapter.exists(FOLDER)) {
             await app.vault.adapter.rmdir(FOLDER, true);
@@ -293,7 +312,7 @@ describe('Renaming notes linked from inside a multi-link frontmatter value', () 
     });
 
     expect(result.valueBefore).toBe('[[rename-multi-a]] and [Multi B](<rename-multi-b.md>)');
-    expect(result.valueAfterFirstRename).toBe('[[renamed multi a]] and [Multi B](<rename-multi-b.md>)');
+    expect(result.valueAfterFirstRename, result.linkContextAfterFirstRename).toBe('[[renamed multi a]] and [Multi B](<rename-multi-b.md>)');
     expect(result.valueAfterSecondRename).toBe('[[renamed multi a]] and [Multi B](<renamed multi b.md>)');
   });
 });

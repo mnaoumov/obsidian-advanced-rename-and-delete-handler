@@ -366,6 +366,12 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
           });
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
+          /*
+           * Saved at once, for the reason the start of the `try` saves: `app.json` holds this case's `false`, and a
+           * reload before the debounced save would hand it to the next suite, whose rename then waits on the
+           * Update links prompt.
+           */
+          await app.vault.saveConfig();
           await applySettings({
             shouldHandleRenames: true,
             shouldRenameAttachmentFolder: true

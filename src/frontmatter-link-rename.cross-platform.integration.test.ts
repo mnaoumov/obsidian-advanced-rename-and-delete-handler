@@ -261,6 +261,8 @@ describe('Moving a note linked from a frontmatter property', () => {
         } finally {
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
           app.vault.setConfig('newLinkFormat', originalNewLinkFormat);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's format.
+          await app.vault.saveConfig();
           /*
            * Through the adapter, as the other suites do: a fixture teardown must not travel back through the
            * very delete path this plugin patches, which would make the cleanup part of what is under test.
