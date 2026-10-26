@@ -552,6 +552,8 @@ describe('A note edited by another plugin while it is being moved', () => {
           app.vault.setConfig('attachmentFolderPath', attachmentFolderPath);
           app.vault.setConfig('alwaysUpdateLinks', alwaysUpdateLinks);
           app.vault.setConfig('newLinkFormat', newLinkFormat);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite `absolute`.
+          await app.vault.saveConfig();
           /*
            * Through the adapter, as the conflicting-plugin suite does: a fixture teardown must not travel
            * back through the very delete path this plugin patches, which would make the cleanup part of
