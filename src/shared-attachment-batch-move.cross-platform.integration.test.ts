@@ -1,3 +1,5 @@
+import type { EventRef } from 'obsidian';
+
 import { evalInObsidian } from 'obsidian-integration-testing';
 import {
   afterAll,
@@ -46,6 +48,11 @@ interface BatchMoveInput {
 interface BatchMoveResult {
   readonly doesDestinationAttachmentExist: boolean;
   readonly doesSourceAttachmentExist: boolean;
+  /**
+   * What the handler saw at each rename, the files left under the fixture root, and each note's text: what a
+   * missing attachment needs to be told apart from a moved-elsewhere one.
+   */
+  readonly report: string;
   readonly resolvedPaths: Record<string, null | string>;
 }
 
@@ -66,6 +73,7 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
+  getSettings: () => Readonly<Record<string, unknown>>;
   migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
@@ -184,12 +192,44 @@ async function runBatchMove(input: BatchMoveInput): Promise<BatchMoveResult> {
         }
       }
 
+      /**
+       * Lists what the handler saw at each rename, the files left under the fixture root, and each note's text.
+       *
+       * @param configsAtRenames - The lines the `rename` listener recorded.
+       * @returns The report, one line per entry.
+       */
+      async function buildReport(configsAtRenames: readonly string[]): Promise<string> {
+        const filePaths = app.vault.getFiles().map((file) => file.path).filter((path) => path.startsWith(`${root}/`)).sort();
+        const lines = [...configsAtRenames, `files: ${JSON.stringify(filePaths)}`];
+        for (const file of app.vault.getMarkdownFiles()) {
+          if (file.path.startsWith(`${root}/`)) {
+            lines.push(`${file.path}: ${JSON.stringify(await app.vault.cachedRead(file))}`);
+          }
+        }
+
+        return lines.join('\n');
+      }
+
       const originalAlwaysUpdateLinks = app.vault.getConfig('alwaysUpdateLinks');
       const originalAttachmentFolderPath = app.vault.getConfig('attachmentFolderPath');
+      let renameEventRef: EventRef | null = null;
 
       try {
         app.vault.setConfig('alwaysUpdateLinks', true);
         app.vault.setConfig('attachmentFolderPath', './_attachments');
+        /*
+         * Saved at once: a config reload in the case's few hundred milliseconds would otherwise put back what
+         * `app.json` holds, and the handler would look for an attachment folder that does not exist and move
+         * nothing.
+         */
+        await app.vault.saveConfig();
+
+        // The values the handler reads, at the moment of each rename it handles; the failure report quotes them.
+        const configsAtRenames: string[] = [];
+        renameEventRef = app.vault.on('rename', (file, oldPath) => {
+          const attachmentFolderPath = JSON.stringify(app.vault.getConfig('attachmentFolderPath')) ?? 'undefined';
+          configsAtRenames.push(`${oldPath} -> ${file.path}: attachmentFolderPath ${attachmentFolderPath}, settings ${JSON.stringify(api.getSettings())}`);
+        });
 
         await applySettings({
           shouldHandleRenames: true,
@@ -245,11 +285,17 @@ async function runBatchMove(input: BatchMoveInput): Promise<BatchMoveResult> {
         return {
           doesDestinationAttachmentExist: app.vault.getFileByPath(DESTINATION_ATTACHMENT) !== null,
           doesSourceAttachmentExist: app.vault.getFileByPath(SOURCE_ATTACHMENT) !== null,
+          report: await buildReport(configsAtRenames),
           resolvedPaths
         };
       } finally {
+        if (renameEventRef) {
+          app.vault.offref(renameEventRef);
+        }
         app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
         app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+        // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+        await app.vault.saveConfig();
         /*
          * Through the adapter: a fixture teardown must not travel back through the very delete path this
          * plugin patches, which would make the cleanup part of what is under test.
@@ -280,7 +326,7 @@ describe('Moving every note that embeds a shared attachment', () => {
       sourcePluginId: SOURCE_PLUGIN_ID
     });
 
-    expect(result.doesDestinationAttachmentExist).toBe(true);
+    expect(result.doesDestinationAttachmentExist, result.report).toBe(true);
     expect(result.doesSourceAttachmentExist).toBe(false);
     expect(result.resolvedPaths).toEqual({
       'Note 1.md': 'rdh-shared-batch-move-all/Destination/_attachments/Shared.png',
@@ -297,7 +343,7 @@ describe('Moving every note that embeds a shared attachment', () => {
       sourcePluginId: SOURCE_PLUGIN_ID
     });
 
-    expect(result.doesDestinationAttachmentExist).toBe(false);
+    expect(result.doesDestinationAttachmentExist, result.report).toBe(false);
     expect(result.doesSourceAttachmentExist).toBe(true);
     expect(result.resolvedPaths).toEqual({
       'Note 1.md': 'rdh-shared-batch-move-some/Source/_attachments/Shared.png',

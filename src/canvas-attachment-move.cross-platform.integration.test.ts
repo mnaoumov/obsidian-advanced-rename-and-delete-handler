@@ -200,6 +200,8 @@ describe('Moving a canvas', () => {
         try {
           // A folder SHARED by every note beside it, so the attachment is reachable only through the canvas's own references.
           app.vault.setConfig('attachmentFolderPath', './assets');
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           await applySettings({
             shouldHandleRenames: true,
@@ -266,6 +268,8 @@ describe('Moving a canvas', () => {
           };
         } finally {
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           // Back to the defaults declared in `src/plugin-settings.ts`, so the next suite starts where this one found things.
           await applySettings({
             shouldHandleRenames: true,

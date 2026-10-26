@@ -204,6 +204,8 @@ describe('A rename inside a foreign plugin\'s locked transaction', () => {
         // Everything that mutates shared state sits inside the `try`, so the `finally` below puts the vault back however this ends.
         try {
           app.vault.setConfig('attachmentFolderPath', './attachments');
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           // The `Custom Attachment Location` configuration from the issue: move attachments with the note, do not update links.
           await applySettings({
@@ -244,6 +246,8 @@ describe('A rename inside a foreign plugin\'s locked transaction', () => {
         } finally {
           foreignResourceLockComponent.unload();
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           // Back to the defaults declared in `src/plugin-settings.ts`, so the next suite starts where this one found things.
           await applySettings({
             shouldHandleRenames: true,

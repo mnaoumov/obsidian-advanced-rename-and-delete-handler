@@ -202,6 +202,8 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
           app.vault.setConfig('attachmentFolderPath', './attachments');
           // Obsidian only rewrites links without prompting when this is on; the prompt would block the headless run.
           app.vault.setConfig('alwaysUpdateLinks', true);
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           // The issue's combination: the handler still runs — it renames attachment files — but delegates every link rewrite to Obsidian.
           await applySettings({
@@ -264,6 +266,8 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
         } finally {
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           // Back to the defaults declared in `src/plugin-settings.ts`, so the next suite starts where this one found things.
           await applySettings({
             shouldHandleRenames: true,
@@ -388,6 +392,8 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
         try {
           app.vault.setConfig('attachmentFolderPath', './attachments');
           app.vault.setConfig('alwaysUpdateLinks', true);
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           await applySettings({
             shouldHandleRenames: false,
@@ -420,6 +426,8 @@ describe('With "Update links" off, Obsidian\'s own link update', () => {
         } finally {
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           // Back to the defaults declared in `src/plugin-settings.ts`, so the next suite starts where this one found things.
           await applySettings({
             shouldHandleRenames: true,

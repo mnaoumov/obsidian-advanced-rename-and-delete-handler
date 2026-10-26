@@ -210,6 +210,8 @@ describe('Deleting a folder whose attachment two outside notes tie over', () => 
           app.vault.setConfig('alwaysUpdateLinks', true);
           // A subfolder of each note's OWN folder, so the two tied notes resolve to different destinations.
           app.vault.setConfig('attachmentFolderPath', './assets');
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           await applySettings({
             // `.md` against `.md` is the reporter's own worked example, and the only entry that ties here.
@@ -317,6 +319,8 @@ describe('Deleting a folder whose attachment two outside notes tie over', () => 
         } finally {
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           /*
            * Through the adapter: a fixture teardown must not travel back through the very delete path this
            * plugin patches, which would make the cleanup part of what is under test.
@@ -433,6 +437,8 @@ describe('Deleting a folder whose attachment two outside notes tie over', () => 
         try {
           app.vault.setConfig('alwaysUpdateLinks', true);
           app.vault.setConfig('attachmentFolderPath', './assets');
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           await applySettings({
             notePriorities: ['.md'],
@@ -527,6 +533,8 @@ describe('Deleting a folder whose attachment two outside notes tie over', () => 
         } finally {
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           if (await app.vault.adapter.exists(ROOT)) {
             await app.vault.adapter.rmdir(ROOT, true);
           }
