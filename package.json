@@ -71,6 +71,6 @@
   },
   "dependencies": {
     "@mnaoumov/obsidian-lib": "^6.2.1",
-    "@mnaoumov/typescript-lib": "^1.4.0"
+    "@mnaoumov/typescript-lib": "^2.0.0"
   }
 }
