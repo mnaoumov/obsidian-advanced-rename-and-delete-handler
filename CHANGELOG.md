@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 3.1.0
+
+- docs(readme): add a Similar plugins section
+- feat: re #8
+- test: save staged vault settings in every attachment-moving suite
+- test: stop vault settings leaking between integration suites
+- test: re #6
+
 ## 3.0.1
 
 - test(canvas): stop counting Obsidian's handed-back canvas write as the plugin's
