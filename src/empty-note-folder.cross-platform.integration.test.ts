@@ -177,6 +177,8 @@ async function runDeleteNote(input: DeleteNoteInput): Promise<DeleteNoteResult> 
 
       try {
         app.vault.setConfig('attachmentFolderPath', ATTACHMENT_FOLDER);
+        // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+        await app.vault.saveConfig();
 
         await applySettings({
           emptyFolderBehavior: 'Delete',
@@ -211,6 +213,8 @@ async function runDeleteNote(input: DeleteNoteInput): Promise<DeleteNoteResult> 
         };
       } finally {
         app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+        // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+        await app.vault.saveConfig();
         /*
          * Through the adapter: a fixture teardown must not travel back through the very delete path this
          * plugin patches, which would make the cleanup part of what is under test.

@@ -270,6 +270,8 @@ describe('Deleting a folder whose attachment belongs to an attachment unit folde
           app.vault.setConfig('alwaysUpdateLinks', true);
           // A subfolder of each note's OWN folder, so the deleted note and the survivor resolve differently.
           app.vault.setConfig('attachmentFolderPath', './assets');
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           /*
            * Stands in for an installed `Custom Attachment Location`: the designation is a member of its
@@ -322,6 +324,8 @@ describe('Deleting a folder whose attachment belongs to an attachment unit folde
           attachmentLocationStubOwner.unload();
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           /*
            * Through the adapter: a fixture teardown must not travel back through the very delete path this
            * plugin patches, which would make the cleanup part of what is under test.
@@ -474,6 +478,8 @@ describe('Deleting a folder whose attachment belongs to an attachment unit folde
         try {
           app.vault.setConfig('alwaysUpdateLinks', true);
           app.vault.setConfig('attachmentFolderPath', './assets');
+          // Saved at once, so a reload of `app.json` mid-case cannot put back a folder the handler would then look for in vain.
+          await app.vault.saveConfig();
 
           publishAttachmentLocationStub();
 
@@ -513,6 +519,8 @@ describe('Deleting a folder whose attachment belongs to an attachment unit folde
           attachmentLocationStubOwner.unload();
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           if (await app.vault.adapter.exists(ROOT)) {
             await app.vault.adapter.rmdir(ROOT, true);
           }

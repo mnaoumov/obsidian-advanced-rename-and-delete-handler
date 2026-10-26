@@ -66,6 +66,8 @@ interface CanvasGuardResult {
   readonly oldAttachmentPath: string;
   readonly originalCanvasContent: string;
   readonly pluginCanvasWriteStacks: readonly string[];
+  // The attachment folder the handler saw and the files left behind, so an attachment that never moved says why.
+  readonly report: string;
 }
 
 interface CanvasNodesProbe {
@@ -314,6 +316,11 @@ describe('Moving a partial canvas', () => {
            * set here, as the sibling suites do.
            */
           app.vault.setConfig('alwaysUpdateLinks', true);
+          /*
+           * Saved at once: a config reload before the debounced save would otherwise put back what `app.json`
+           * holds, and the handler would look for an attachment folder that does not exist and move nothing.
+           */
+          await app.vault.saveConfig();
 
           await applySettings({
             shouldHandleRenames: true,
@@ -360,6 +367,8 @@ describe('Moving a partial canvas', () => {
             timeoutInMilliseconds: INDEX_TIMEOUT_IN_MILLISECONDS
           });
 
+          // What the handler reads when it handles the rename; the failure report quotes it.
+          const attachmentFolderPathAtRename = app.vault.getConfig('attachmentFolderPath');
           await app.fileManager.renameFile(canvas, DST_CANVAS);
 
           /*
@@ -392,6 +401,10 @@ describe('Moving a partial canvas', () => {
             throw new Error(`Canvas ${DST_CANVAS} not found.`);
           }
 
+          const fixtureFilePaths = app.vault.getFiles().map((file) => file.path)
+            .filter((path) => path.startsWith(`${SRC_FOLDER}/`) || path.startsWith(`${DST_FOLDER}/`))
+            .sort();
+
           return {
             hasAttachmentAtNewPath: app.vault.getAbstractFileByPath(DST_ATTACHMENT) !== null,
             hasAttachmentAtOldPath: app.vault.getAbstractFileByPath(SRC_ATTACHMENT) !== null,
@@ -399,7 +412,11 @@ describe('Moving a partial canvas', () => {
             newAttachmentPath: DST_ATTACHMENT,
             oldAttachmentPath: SRC_ATTACHMENT,
             originalCanvasContent: partialCanvasContent,
-            pluginCanvasWriteStacks
+            pluginCanvasWriteStacks,
+            report: [
+              `attachmentFolderPath at the rename: ${JSON.stringify(attachmentFolderPathAtRename) ?? 'undefined'}`,
+              `files: ${JSON.stringify(fixtureFilePaths)}`
+            ].join('\n')
           };
         } finally {
           for (const removeWriteObserver of writeObserverRemovers) {
@@ -407,6 +424,8 @@ describe('Moving a partial canvas', () => {
           }
           app.vault.setConfig('attachmentFolderPath', originalAttachmentFolderPath);
           app.vault.setConfig('alwaysUpdateLinks', originalAlwaysUpdateLinks);
+          // Saved at once, so a reload of `app.json` before the debounced save cannot hand the next suite this case's folder.
+          await app.vault.saveConfig();
           // Back to the defaults declared in `src/plugin-settings.ts`, so the next suite starts where this one found things.
           await applySettings({
             shouldHandleRenames: true,
@@ -431,7 +450,7 @@ describe('Moving a partial canvas', () => {
     });
 
     // The rename over the partial canvas completed and still relocated the embedded attachment.
-    expect(result.hasAttachmentAtNewPath).toBe(true);
+    expect(result.hasAttachmentAtNewPath, result.report).toBe(true);
     expect(result.hasAttachmentAtOldPath).toBe(false);
 
     /*
