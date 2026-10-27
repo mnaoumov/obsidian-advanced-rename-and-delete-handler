@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Source layout: one folder per subject, tests beside what they test
+
+`src/` holds only the entry point and the plugin class (`main.ts`, `plugin.ts` and their tests). Everything else sits in a subject folder, and an integration suite goes with the subject it pins rather than with the other integration suites: `rename-delete-handler/` (the handler copy and what only it uses), `rename/`, `canvas/`, `rescue/`, `empty-folders/` (the sweep, its command and the deleted note's own folder), `settings/` (including the first-load notice and the integration suites' shared settings snapshot), `plugin-api/` (the published API, its migration dialog and the dependents list), `coexistence/` (conflicts with other plugins and their locks), `performance/` (the `desktop-performance` suites) and `demo-vault-and-screenshots/`. A new file joins the folder of its subject; a new subject gets a folder only once it has at least three files.
+
 ## Direction: the defaults do nothing, and a first run says so
 
 Every behavior is off by default — `shouldHandleRenames` AND `shouldRenameAttachmentFolder` included, because the attachment move runs with link updates off. `Custom Attachment Location` and `Consistent Attachments and Links` declare this plugin as a mandatory dependency (`getPluginDependencies()` in `@mnaoumov/obsidian-lib`), so users are made to install it, and being made to install something must not change how their vault behaves. Their old values arrive through `migrateSettings`, where the user sees what would change. Do not turn a default back on to make a demo or a test simpler; set it explicitly there.
