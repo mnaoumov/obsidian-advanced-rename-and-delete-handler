@@ -49,19 +49,23 @@ A copy of the vault ships with every release. You can access it via any of the f
 - **The plugin can be confined to part of the vault** with include and exclude path lists. [05 Limiting the scope](<./demo-vault/05 Limiting the scope.md>)
 - **It lists the plugins that depend on it**, and stands aside for one that still owns its own handler. [Living with other plugins](./docs/other-plugins.md)
 
-## Similar plugins
+## See also
 
-- [`Attachment Manager`](https://community.obsidian.md/plugins/attachment-manager) — the closest in scope: binds one attachment folder to each note's name, and renames or deletes that folder with the note; it also renames pasted images and can hide the folders, and it takes over two of Obsidian's own *Files and links* settings while enabled. This plugin works with whatever attachment layout your vault already has, and adds shared-attachment handling and include and exclude paths.
-- [`Consistent Attachments`](https://community.obsidian.md/plugins/consistent-attachments) — moves or copies a note's attachments when the note moves to another folder, with a skip, copy or ask choice for shared ones, and scans for orphaned and misplaced attachments; it does not act on deletions.
-- [`Note Folder Autorename`](https://community.obsidian.md/plugins/note-folder-autorename) — turns a note into a folder note and moves or renames the folder whenever the note moves or is renamed; it follows that one folder, not the attachments a note links.
-- [`Move Files`](https://community.obsidian.md/plugins/move-files) — a command that gathers every file the open note links into a `<note> files` folder and updates the links; it runs on request, not on rename.
-- [`Delete Note and Attachments`](https://github.com/mandavap/obsidian-delete-note-and-attachments) (not in the community directory) — a context-menu entry that deletes a note together with its embedded attachments, after a dialog that shows which ones another note still uses; an ordinary deletion is left alone.
-- [`Strip Images`](https://community.obsidian.md/plugins/strip-images) — removes every image embed from one note on request and trashes the images no other note references; the note itself stays.
-- [`Media Archive`](https://community.obsidian.md/plugins/media-archive) — sends deleted media to an archive folder instead of the trash, refuses to archive media a note still uses, and moves unused uploads there on its own; it manages two fixed folders rather than each note's attachments.
-- [`Unlink on Delete`](https://community.obsidian.md/plugins/unlink-on-delete) — when a file is deleted, rewrites the links that pointed at it into plain text; this plugin cleans up files a deletion leaves behind, not links.
-- [`Remove Empty Assets`](https://community.obsidian.md/plugins/remove-empty-assets) — removes empty folders inside your attachment folders, on startup, on a schedule, or after a note or attachment is deleted; it does not delete attachments themselves.
-- [`Remove Empty Folders`](https://community.obsidian.md/plugins/remove-empty-folders) — a file-explorer action that removes the empty folders under the selected folders, one level per run; this plugin's **Delete empty folders** command sweeps the whole vault, deepest first, in one pass.
-- [`File Bundles`](https://community.obsidian.md/plugins/file-bundles) — lets a file declare the files and folders that belong to it, and moves, renames, duplicates or deletes them as one locked bundle; the grouping is declared per file, where this plugin derives it from links and the attachment folder.
+[My other Obsidian resources](https://github.com/mnaoumov/obsidian-resources)
+
+| Plugin | Features | How `Advanced Rename and Delete Handler` differs |
+| --- | --- | --- |
+| [`Attachment Manager`](https://community.obsidian.md/plugins/attachment-manager) | Per-note attachment folder; rename/delete; pasted-image naming; visibility; overrides core settings | Same lifecycle goal; arbitrary existing layouts; shared attachments; include/exclude paths |
+| [`Consistent Attachments`](https://community.obsidian.md/plugins/consistent-attachments) | Moves/copies attachments on note moves; shared-file choices; orphan/placement scans | Broader lifecycle scope: deletions too |
+| [`Delete Note and Attachments`](https://github.com/mandavap/obsidian-delete-note-and-attachments) | Unlisted; explicit note-plus-embeds deletion; shared-use confirmation | Broader trigger: ordinary note deletion too |
+| [`File Bundles`](https://community.obsidian.md/plugins/file-bundles) (my plugin) | Declared locked bundles; move, rename, duplicate and delete together | Alternative grouping: derives attachments from links and configured folders |
+| [`Media Archive`](https://community.obsidian.md/plugins/media-archive) | Archives deleted/unused media; shared-use protection; two fixed folders | Different scope: each note's attachments and their lifecycle |
+| [`Move Files`](https://community.obsidian.md/plugins/move-files) | Command gathers linked files into a note-specific folder and updates links | Different trigger: follows renames automatically |
+| [`Note Folder Autorename`](https://community.obsidian.md/plugins/note-folder-autorename) | Folder-note convention; folder follows note moves/renames | Different grouping: linked attachments rather than one companion folder |
+| [`Remove Empty Assets`](https://community.obsidian.md/plugins/remove-empty-assets) | Periodic/startup/deletion cleanup of empty attachment folders | Broader cleanup: attachment files as well as folders |
+| [`Remove Empty Folders`](https://community.obsidian.md/plugins/remove-empty-folders) | Explorer action removes empty folders one level per run | Broader sweep: whole vault, deepest first, in one command |
+| [`Strip Images`](https://community.obsidian.md/plugins/strip-images) | Command removes image embeds and trashes unshared images; note stays | Different trigger: cleans attachments after deleting a note |
+| [`Unlink on Delete`](https://community.obsidian.md/plugins/unlink-on-delete) | Turns incoming links into plain text when a file is deleted | Complementary cleanup: files left by a deletion rather than incoming links |
 
 Last searched for similar plugins on 2026-10-26.
 
@@ -102,10 +106,6 @@ Contributions are welcome — see [CONTRIBUTING](./CONTRIBUTING.md) to get set u
 <a href="https://www.buymeacoffee.com/mnaoumov" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" width="217"></a>
 
 <!-- markdownlint-enable MD033 -->
-
-## My other Obsidian resources
-
-[See my other Obsidian resources](https://github.com/mnaoumov/obsidian-resources).
 
 ## License
 
