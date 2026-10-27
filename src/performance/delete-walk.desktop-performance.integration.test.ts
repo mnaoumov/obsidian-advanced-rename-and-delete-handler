@@ -63,9 +63,13 @@ interface DeleteProbe {
  * The page-side state shared across the scenario's calls through a {@link ContextId}.
  */
 interface DeleteWalkContext {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   deleteError?: string;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   isDeleteSettled?: boolean;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   originalIterateAllRefs?: MetadataCache['iterateAllRefs'];
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   walkCount?: number;
 }
 

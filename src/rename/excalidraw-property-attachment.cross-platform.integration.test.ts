@@ -26,8 +26,8 @@ import {
 const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 
 interface AttachmentApiLike {
-  getSettings: () => AttachmentSettingsLike;
-  isTreatedAsAttachment: (path: string) => boolean;
+  readonly getSettings: () => AttachmentSettingsLike;
+  readonly isTreatedAsAttachment: (path: string) => boolean;
 }
 
 interface AttachmentSettingsLike {

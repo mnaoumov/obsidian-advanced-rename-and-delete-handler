@@ -71,8 +71,8 @@ interface ObsidianLibStateLike {
 }
 
 interface PluginApiLike {
-  getSettings: () => PluginSettingsSnapshot;
-  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
+  readonly getSettings: () => PluginSettingsSnapshot;
+  readonly migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 /**

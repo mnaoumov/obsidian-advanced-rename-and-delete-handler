@@ -26,7 +26,7 @@ vi.mock('./delete-empty-folders.ts', () => ({
 const mockDeleteEmptyFolders = vi.mocked(deleteEmptyFolders);
 
 interface CommandHandlerPrivate {
-  execute: () => Promise<void>;
+  readonly execute: () => Promise<void>;
 }
 
 function asPrivate(handler: DeleteEmptyFoldersCommandHandler): CommandHandlerPrivate {

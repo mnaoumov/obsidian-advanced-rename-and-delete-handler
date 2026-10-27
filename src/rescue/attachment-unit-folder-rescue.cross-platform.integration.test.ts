@@ -79,7 +79,7 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
-  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
+  readonly migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 /**

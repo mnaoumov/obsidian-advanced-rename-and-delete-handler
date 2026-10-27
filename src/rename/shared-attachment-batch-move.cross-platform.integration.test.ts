@@ -73,8 +73,8 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
-  getSettings: () => Readonly<Record<string, unknown>>;
-  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
+  readonly getSettings: () => Readonly<Record<string, unknown>>;
+  readonly migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 interface ObsidianLibStateLike {

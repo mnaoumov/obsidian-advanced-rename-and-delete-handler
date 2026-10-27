@@ -90,8 +90,10 @@ interface BulkDeleteContext {
    *
    * Its absence is what the Node-side poll waits on, so it doubles as the loop's done flag.
    */
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   baselineDurationInMilliseconds?: number;
 
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   enabledStartTimeInMilliseconds?: number;
 
   /**
@@ -101,7 +103,9 @@ interface BulkDeleteContext {
    * reaching N says every handler ran, not that the loop that fired them has returned, and the original
    * shape awaited that loop.
    */
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   isEnabledBurstDone?: boolean;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   resolverCallCount?: number;
 }
 
@@ -121,8 +125,11 @@ interface DrainProbe {
  * index-only note, or anything unexpected.
  */
 interface IndexOnlyContext {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   markerResolverCalls?: number;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   otherResolverCalls?: number;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   syntheticResolverCalls?: number;
 }
 
@@ -130,6 +137,7 @@ interface IndexOnlyContext {
  * The page-side state both scenarios share: the component owning the stub API record each one publishes.
  */
 interface ResolverStubContext {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   resolverStubOwner?: ResolverStubOwnerLike;
 }
 
@@ -138,7 +146,7 @@ interface ResolverStubContext {
  * the next scenario publish the same API version again.
  */
 interface ResolverStubOwnerLike {
-  unload: () => void;
+  readonly unload: () => void;
 }
 
 /**

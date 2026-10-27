@@ -46,8 +46,11 @@ const RENAMED_BASE_PATH = BASE_RENAME_BASE_PATH.replace(/\.base$/, '1111.base');
  * The page-side state shared across the scenario's calls through a {@link ContextId}.
  */
 interface BaseRenameContext {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   consoleErrors?: string[];
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   originalConsoleError?: typeof console.error;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   renameError?: string;
 }
 

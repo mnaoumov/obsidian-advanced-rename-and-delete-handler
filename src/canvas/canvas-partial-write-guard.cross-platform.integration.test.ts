@@ -71,7 +71,7 @@ interface CanvasGuardResult {
 }
 
 interface CanvasNodesProbe {
-  nodes?: unknown;
+  readonly nodes?: unknown;
 }
 
 interface MigratableSettingsLike {
@@ -89,7 +89,7 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
-  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
+  readonly migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 interface ObsidianLibStateLike {

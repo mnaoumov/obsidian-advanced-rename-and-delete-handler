@@ -22,12 +22,13 @@ import { FirstLoadNoticeComponent } from './first-load-notice-component.ts';
 const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 
 interface AppSettingLike {
-  open: ReturnType<typeof vi.fn>;
-  openTabById: ReturnType<typeof vi.fn>;
+  readonly open: ReturnType<typeof vi.fn>;
+  readonly openTabById: ReturnType<typeof vi.fn>;
 }
 
 // `app.setting` is the one member the notice reaches that obsidian-test-mocks does not model.
 interface SettingLike {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The test setup replaces this mock member while staging the fixture.
   setting: AppSettingLike;
 }
 
