@@ -1,0 +1,195 @@
+import type { MetadataCache } from 'obsidian';
+
+import {
+  ContextId,
+  evalInObsidian,
+  pollInObsidian
+} from 'obsidian-integration-testing';
+import { getTemporaryVault } from 'obsidian-integration-testing/vitest-global-setup-plugin';
+import {
+  describe,
+  expect,
+  it
+} from 'vitest';
+
+import {
+  DELETE_WALK_ATTACHMENT_COUNT,
+  DELETE_WALK_DELETED_FOLDER,
+  PLUGIN_ID
+} from '../../scripts/generate-performance-vault.ts';
+
+/*
+ * Counts the whole-vault backlink walks a protected folder deletion takes, and asserts it takes none.
+ *
+ * Deleting a folder whose attachments a note outside it still embeds goes through
+ * `DeleteProtectionPatchComponent`: a pre-scan asking which attachments are still used, the unit-folder rescue
+ * pre-pass asking again, and then the library's `deleteIfNotUsed` walking the folder. The first two are this
+ * plugin's own `findSurvivingNotePaths` lookups; the third is the library's `deleteIfNotUsed`, once per file it
+ * visits. All three call the library's `getBacklinksForFileSafe`, which
+ * answers from the library's own backlink index rather than from an `iterateAllRefs` walk.
+ *
+ * The fixture is A embedded attachments plus one unlinked one. Each pre-pass asks once per non-note file and the
+ * library once per file it visits, so a lookup falling back to a walk shows up as A + 1 walks or more. Measured
+ * with A = 20: 43 walks before the pre-passes went through the index, 1 after
+ * them, and 0 once the library's own walk did too (2026-09-25).
+ *
+ * The library visits every child of the folder, keeping the attachments the holder still embeds and deleting the
+ * unlinked `unused.png`, so the suite asserts that file is gone as well as that the rest stayed.
+ *
+ * The deletion is FIRED and the poll runs in Node, for the reason this repo's `AGENTS.md` gives under the
+ * transport cap. Its effect arriving is not the queue being empty, so the queue is drained afterwards too.
+ */
+
+const SCENARIO_TIMEOUT_IN_MS = 300_000;
+const DELETE_WAIT_IN_MS = 180_000;
+
+/**
+ * How many whole-vault walks the folder deletion may take. Every lookup it makes, this plugin's and the
+ * library's, is answered from a backlink index.
+ */
+const MAX_WALKS_PER_FOLDER_DELETE = 0;
+
+/**
+ * What the deletion poll reports back to Node.
+ */
+interface DeleteProbe {
+  readonly deleteError: null | string;
+  readonly isDeleteSettled: boolean;
+  readonly isUnusedAttachmentPresent: boolean;
+  readonly keptAttachmentCount: number;
+}
+
+/**
+ * The page-side state shared across the scenario's calls through a {@link ContextId}.
+ */
+interface DeleteWalkContext {
+  deleteError?: string;
+  isDeleteSettled?: boolean;
+  originalIterateAllRefs?: MetadataCache['iterateAllRefs'];
+  walkCount?: number;
+}
+
+describe('folder delete backlink walks', () => {
+  it('answers every backlink lookup from an index, walking the vault not once', async () => {
+    const contextId = new ContextId<DeleteWalkContext>();
+    const vaultPath = getTemporaryVault().path;
+
+    try {
+      await pollInObsidian({
+        input: { folderPath: DELETE_WALK_DELETED_FOLDER },
+        poll({ app, folderPath }): number {
+          let resolvedEmbedCount = 0;
+          for (const file of app.vault.getMarkdownFiles()) {
+            for (const embed of app.metadataCache.getFileCache(file)?.embeds ?? []) {
+              if (app.metadataCache.getFirstLinkpathDest(embed.link, file.path)?.path.startsWith(`${folderPath}/`)) {
+                resolvedEmbedCount++;
+              }
+            }
+          }
+          return resolvedEmbedCount;
+        },
+        timeoutInMilliseconds: DELETE_WAIT_IN_MS,
+        timeoutMessage: 'the holder\'s embeds were never indexed',
+        until: (resolvedEmbedCount: number): boolean => resolvedEmbedCount === DELETE_WALK_ATTACHMENT_COUNT,
+        vaultPath
+      });
+
+      await evalInObsidian({
+        async callback({ app, context, pluginId }): Promise<void> {
+          if (!app.plugins.enabledPlugins.has(pluginId)) {
+            await app.plugins.enablePlugin(pluginId);
+          }
+
+          context.walkCount = 0;
+          const metadataCache = app.metadataCache;
+          const originalIterateAllRefs = metadataCache.iterateAllRefs.bind(metadataCache);
+          context.originalIterateAllRefs = originalIterateAllRefs;
+          metadataCache.iterateAllRefs = (callback): void => {
+            context.walkCount = (context.walkCount ?? 0) + 1;
+            originalIterateAllRefs(callback);
+          };
+        },
+        contextId,
+        input: { pluginId: PLUGIN_ID },
+        vaultPath
+      });
+
+      const deleted = await pollInObsidian({
+        contextId,
+        input: { folderPath: DELETE_WALK_DELETED_FOLDER },
+        poll({ app, context, folderPath }): DeleteProbe {
+          return {
+            deleteError: context.deleteError ?? null,
+            isDeleteSettled: context.isDeleteSettled ?? false,
+            isUnusedAttachmentPresent: app.vault.getFileByPath(`${folderPath}/unused.png`) !== null,
+            keptAttachmentCount: app.vault.getFiles().filter((file) => file.path.startsWith(`${folderPath}/attachment-`)).length
+          };
+        },
+        start({ app, context, folderPath }): void {
+          const folder = app.vault.getFolderByPath(folderPath);
+          if (!folder) {
+            throw new Error(`Folder ${folderPath} not found.`);
+          }
+          app.fileManager.trashFile(folder)
+            .then(() => {
+              context.isDeleteSettled = true;
+            })
+            .catch((error: unknown) => {
+              context.deleteError = error instanceof Error ? error.message : String(error);
+            });
+        },
+        timeoutInMilliseconds: DELETE_WAIT_IN_MS,
+        timeoutMessage: `the deletion of ${DELETE_WALK_DELETED_FOLDER} never settled`,
+        until: (probe: DeleteProbe): boolean => probe.deleteError !== null || probe.isDeleteSettled,
+        vaultPath
+      });
+      if (deleted.deleteError !== null) {
+        throw new Error(`the folder deletion rejected: ${deleted.deleteError}`);
+      }
+
+      await drainQueue();
+
+      const walkCount = await evalInObsidian({
+        callback({ context }): number {
+          return context.walkCount ?? -1;
+        },
+        contextId,
+        vaultPath
+      });
+
+      expect(deleted.keptAttachmentCount).toBe(DELETE_WALK_ATTACHMENT_COUNT);
+      expect(deleted.isUnusedAttachmentPresent).toBe(false);
+      expect(walkCount).toBeLessThanOrEqual(MAX_WALKS_PER_FOLDER_DELETE);
+    } finally {
+      await drainQueue();
+      await evalInObsidian({
+        callback({ app, context }): void {
+          if (context.originalIterateAllRefs) {
+            app.metadataCache.iterateAllRefs = context.originalIterateAllRefs;
+          }
+        },
+        contextId,
+        vaultPath
+      });
+      await contextId.dispose();
+    }
+
+    /**
+     * Drains the handler's operation queue, after the effects being waited for have arrived, so no work of this
+     * suite is still in flight when the next one starts. A rejection is swallowed: this also runs on the failure
+     * path, and a stuck queue must not replace the assertion that actually failed.
+     */
+    async function drainQueue(): Promise<void> {
+      try {
+        await evalInObsidian({
+          async callback({ lib: { flushQueue } }): Promise<void> {
+            await flushQueue();
+          },
+          vaultPath
+        });
+      } catch {
+        // Reported by whatever the scenario itself found, which is the more useful failure.
+      }
+    }
+  }, SCENARIO_TIMEOUT_IN_MS);
+});

@@ -89,7 +89,7 @@ const DEMO_VAULT_TEST_FILES = 'src/**/*.demo-vault.integration.test.ts';
 
 /**
  * The Node-side helpers the integration suites share, such as
- * `src/settings-snapshot.integration-helper.ts`.
+ * `src/settings/settings-snapshot.integration-helper.ts`.
  *
  * They are not `*.test.ts`, so the shared `coverageExclude` does not reach them, and the coverage gate runs
  * `unit-tests` only — where these never execute. Left in the report they would sit at 0% and drag the 100%

@@ -24,7 +24,7 @@ import {
   vi
 } from 'vitest';
 
-import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
+import type { RenameDeleteHandlerSettings } from './rename-delete-handler/rename-delete-handler-component.ts';
 
 interface AppWithSetting {
   setting: SettingLike;
@@ -81,9 +81,9 @@ const { renameDeleteHandlerStub } = vi.hoisted(() => ({
 
 // Stub the plugin's OWN sibling modules. The settings stub extends the real test-mocks `Component` so the
 // real `PluginBase` lifecycle can load it as a child without the heavy settings-base dependencies.
-vi.mock('./plugin-settings-component.ts', async () => {
+vi.mock('./settings/plugin-settings-component.ts', async () => {
   const { Component } = await vi.importActual<ComponentModuleActual>('obsidian');
-  const { PluginSettings } = await vi.importActual<typeof import('./plugin-settings.ts')>('./plugin-settings.ts');
+  const { PluginSettings } = await vi.importActual<typeof import('./settings/plugin-settings.ts')>('./settings/plugin-settings.ts');
   const { noopAsync } = await vi.importActual<typeof import('@mnaoumov/typescript-lib/function')>('@mnaoumov/typescript-lib/function');
   class PluginSettingsComponent extends Component {
     public settings = new PluginSettings();
@@ -106,12 +106,12 @@ vi.mock('./plugin-settings-component.ts', async () => {
   return { PluginSettingsComponent };
 });
 
-vi.mock('./plugin-settings-tab.ts', () => ({
+vi.mock('./settings/plugin-settings-tab.ts', () => ({
   PluginSettingsTab: vi.fn()
 }));
 
-vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./rename-delete-handler-component.ts')>();
+vi.mock('./rename-delete-handler/rename-delete-handler-component.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./rename-delete-handler/rename-delete-handler-component.ts')>();
   const { Component } = await vi.importActual<ComponentModuleActual>('obsidian');
   // eslint-disable-next-line prefer-arrow-callback -- a vi.fn used with `new` must be a non-arrow function returning a fresh real Component.
   renameDeleteHandlerStub.mockImplementation(function NamedStub() {
@@ -124,21 +124,21 @@ vi.mock('./rename-delete-handler-component.ts', async (importOriginal) => {
 });
 
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
-import { FirstLoadNoticeComponent } from './first-load-notice-component.ts';
+import { PluginApiImpl } from './plugin-api/plugin-api-impl.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
-import { PluginApiImpl } from './plugin-api-impl.ts';
+import { PLUGIN_API_VERSION } from './plugin-api/plugin-api.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
-import { PLUGIN_API_VERSION } from './plugin-api.ts';
-// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
-import { PluginDependentsComponent } from './plugin-dependents-component.ts';
-// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
-import { PluginSettingsComponent } from './plugin-settings-component.ts';
-// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
-import { PluginSettingsTab } from './plugin-settings-tab.ts';
+import { PluginDependentsComponent } from './plugin-api/plugin-dependents-component.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
 import { Plugin } from './plugin.ts';
 // eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
-import { RescueDecisionScope } from './rescue-decision-scope.ts';
+import { RescueDecisionScope } from './rescue/rescue-decision-scope.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { FirstLoadNoticeComponent } from './settings/first-load-notice-component.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { PluginSettingsComponent } from './settings/plugin-settings-component.ts';
+// eslint-disable-next-line import-x/first, import-x/imports-first -- vi.mock must precede imports.
+import { PluginSettingsTab } from './settings/plugin-settings-tab.ts';
 
 const PLUGIN_MANIFEST: PluginManifest = {
   author: 'test',
