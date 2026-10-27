@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 3.1.1
+
+- refactor: group src into subject folders
+- docs: cut the README down to a landing page, detail moved into docs/
+- fix(rename): keep a folder note's folder name as its link caption
+
 ## 3.1.0
 
 - docs(readme): add a Similar plugins section
