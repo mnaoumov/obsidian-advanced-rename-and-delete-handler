@@ -11,25 +11,25 @@ import { PluginDataHandler } from '@mnaoumov/obsidian-lib/data-handler';
 import { PluginBase } from '@mnaoumov/obsidian-lib/plugin/plugin';
 import { PluginEventSourceImpl } from '@mnaoumov/obsidian-lib/plugin/plugin-event-source';
 
-import type { RenameDeleteHandlerSettings } from './rename-delete-handler-component.ts';
+import type { RenameDeleteHandlerSettings } from './rename-delete-handler/rename-delete-handler-component.ts';
 
-import { DeleteEmptyFoldersCommandHandler } from './command-handlers/delete-empty-folders-command-handler.ts';
 import {
   CONSISTENT_ATTACHMENTS_AND_LINKS_DELETE_EMPTY_FOLDERS_VERSION_RANGE,
   CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_ID,
   CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME
-} from './consistent-attachments-and-links.ts';
-import { FirstLoadNoticeComponent } from './first-load-notice-component.ts';
-import { PluginApiImpl } from './plugin-api-impl.ts';
+} from './coexistence/consistent-attachments-and-links.ts';
+import { DeleteEmptyFoldersCommandHandler } from './empty-folders/delete-empty-folders-command-handler.ts';
+import { PluginApiImpl } from './plugin-api/plugin-api-impl.ts';
 import {
   PLUGIN_API_CONTRACT,
   PLUGIN_API_VERSION
-} from './plugin-api.ts';
-import { PluginDependentsComponent } from './plugin-dependents-component.ts';
-import { PluginSettingsComponent as PluginSettingsComponentImpl } from './plugin-settings-component.ts';
-import { PluginSettingsTab } from './plugin-settings-tab.ts';
-import { RenameDeleteHandlerComponent } from './rename-delete-handler-component.ts';
-import { RescuePathResolver } from './rescue-path-resolver.ts';
+} from './plugin-api/plugin-api.ts';
+import { PluginDependentsComponent } from './plugin-api/plugin-dependents-component.ts';
+import { RenameDeleteHandlerComponent } from './rename-delete-handler/rename-delete-handler-component.ts';
+import { RescuePathResolver } from './rescue/rescue-path-resolver.ts';
+import { FirstLoadNoticeComponent } from './settings/first-load-notice-component.ts';
+import { PluginSettingsComponent as PluginSettingsComponentImpl } from './settings/plugin-settings-component.ts';
+import { PluginSettingsTab } from './settings/plugin-settings-tab.ts';
 
 const DELETE_EMPTY_FOLDERS_OVERLAP_REASON = 'Both plugins add a Delete empty folders command, so it appears'
   + ' twice in the command palette and running either copy sweeps the vault again.';
