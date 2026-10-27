@@ -146,7 +146,7 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
-  migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
+  readonly migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
 /**
@@ -168,6 +168,7 @@ interface MoveProbe {
  * The state `start` leaves for `poll`, shared through the call's {@link ContextId}.
  */
 interface NoteMoveContext {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   renameError?: string;
 }
 

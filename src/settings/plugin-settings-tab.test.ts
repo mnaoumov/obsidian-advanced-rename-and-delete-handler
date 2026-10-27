@@ -63,16 +63,17 @@ const EXPECTED_HEADINGS = [
 const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 
 interface AppSettingLike {
-  openTabById: ReturnType<typeof vi.fn>;
+  readonly openTabById: ReturnType<typeof vi.fn>;
 }
 
 // The obsidian-test-mocks button: its DOM element is inert, and the registered handler runs through here.
 interface ButtonComponentMock {
   readonly buttonEl: HTMLButtonElement;
-  simulateClick__: () => void;
+  readonly simulateClick__: () => void;
 }
 
 interface SettingLike {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The test setup replaces this mock member while staging the fixture.
   setting: AppSettingLike;
 }
 

@@ -137,7 +137,7 @@ export interface RenameDeleteHandlerSettings {
   /**
    * A behavior of the rename/delete handler when deleting empty folders.
    */
-  emptyFolderBehavior: EmptyFolderBehavior;
+  readonly emptyFolderBehavior: EmptyFolderBehavior;
 
   /**
    * Where to move an attachment that a deletion would otherwise strand — one that survives because another
@@ -147,58 +147,58 @@ export interface RenameDeleteHandlerSettings {
    * than guesses. Returning `null` — or not implementing this at all — keeps the attachment where it is,
    * which is the behavior every consumer had before this member existed.
    */
-  getRescuePath?: (params: GetRescuePathParams) => Promise<null | RescueDestination>;
+  readonly getRescuePath?: (params: GetRescuePathParams) => Promise<null | RescueDestination>;
 
   /**
    * Whether the path is a note.
    */
-  isNote: (path: string) => boolean;
+  readonly isNote: (path: string) => boolean;
 
   /**
    * Whether to ignore the path. `isFolder` says the path is a folder, which only a folder-only glob (one ending in `/`) reads.
    */
-  isPathIgnored: (path: string, isFolder?: boolean) => boolean;
+  readonly isPathIgnored: (path: string, isFolder?: boolean) => boolean;
 
   /**
    * Whether to delete conflicting attachments.
    */
-  shouldDeleteConflictingAttachments: boolean;
+  readonly shouldDeleteConflictingAttachments: boolean;
 
   /**
    * Whether {@link emptyFolderBehavior} also applies to the folder a deleted note leaves empty. When off, only
    * the folders of the attachments the deletion removed are candidates.
    */
-  shouldDeleteEmptyNoteFolders: boolean;
+  readonly shouldDeleteEmptyNoteFolders: boolean;
 
   /**
    * Whether to handle deletions.
    */
-  shouldHandleDeletions: boolean;
+  readonly shouldHandleDeletions: boolean;
 
   /**
    * Whether to handle renames.
    */
-  shouldHandleRenames: boolean;
+  readonly shouldHandleRenames: boolean;
 
   /**
    * Whether to rename attachment files when a note is renamed.
    */
-  shouldRenameAttachmentFiles: boolean;
+  readonly shouldRenameAttachmentFiles: boolean;
 
   /**
    * Whether to rename attachment folder when a note is renamed.
    */
-  shouldRenameAttachmentFolder: boolean;
+  readonly shouldRenameAttachmentFolder: boolean;
 
   /**
    * Whether to show the `Updated N links in M files.` notice after a rename updated links. Absent means shown.
    */
-  shouldShowLinkUpdateNotice: boolean;
+  readonly shouldShowLinkUpdateNotice: boolean;
 
   /**
    * Whether to update file name aliases when a note is renamed.
    */
-  shouldUpdateFileNameAliases: boolean;
+  readonly shouldUpdateFileNameAliases: boolean;
 }
 
 /**
@@ -260,13 +260,13 @@ interface FindSurvivingNotePathsParams {
 }
 
 interface HandledRenameKey {
-  newPath: string;
-  oldPath: string;
+  readonly newPath: string;
+  readonly oldPath: string;
 }
 
 interface InterruptedRename {
-  combinedBacklinksMap: Map<string, Map<string, string>>;
-  oldPath: string;
+  readonly combinedBacklinksMap: Map<string, Map<string, string>>;
+  readonly oldPath: string;
 }
 
 interface MetadataDeletedHandlerConstructorParams {

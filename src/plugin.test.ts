@@ -27,30 +27,32 @@ import {
 import type { RenameDeleteHandlerSettings } from './rename-delete-handler/rename-delete-handler-component.ts';
 
 interface AppWithSetting {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The test setup replaces this mock member while staging the fixture.
   setting: SettingLike;
 }
 
 interface ComponentModuleActual {
-  Component: new () => object;
+  readonly Component: new () => object;
 }
 
 interface FileManagerLike {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The test setup replaces this mock member while staging the fixture.
   runAsyncLinkUpdate: ReturnType<typeof vi.fn>;
 }
 
 interface FileManagerWithLinkUpdate {
-  fileManager: FileManagerLike;
+  readonly fileManager: FileManagerLike;
 }
 
 // `getPluginApis` is protected on the base for the same reason.
 interface PluginApisProbe {
-  getPluginApis: () => PluginApiDeclaration[];
+  readonly getPluginApis: () => PluginApiDeclaration[];
 }
 
 // `getPluginConflicts` is protected on the base — the declaration is for the library, not for callers —
 // so a test reads it through a probe rather than widening the plugin's own surface.
 interface PluginConflictsProbe {
-  getPluginConflicts: () => PluginConflict[];
+  readonly getPluginConflicts: () => PluginConflict[];
 }
 
 interface PluginGateProbe {
@@ -58,7 +60,9 @@ interface PluginGateProbe {
 }
 
 interface PluginsLike {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The test setup replaces this mock member while staging the fixture.
   disablePlugin: ReturnType<typeof vi.fn>;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The test setup replaces this mock member while staging the fixture.
   manifests: Record<string, PluginManifest>;
 }
 
@@ -67,12 +71,12 @@ interface RenameDeleteHandlerComponentParams {
 }
 
 interface SettingLike {
-  addSettingTab: ReturnType<typeof vi.fn>;
-  removeSettingTab: ReturnType<typeof vi.fn>;
+  readonly addSettingTab: ReturnType<typeof vi.fn>;
+  readonly removeSettingTab: ReturnType<typeof vi.fn>;
 }
 
 interface SettingsTabParamsProbe {
-  getPluginGateComponent: () => PluginGateComponent;
+  readonly getPluginGateComponent: () => PluginGateComponent;
 }
 
 const { renameDeleteHandlerStub } = vi.hoisted(() => ({

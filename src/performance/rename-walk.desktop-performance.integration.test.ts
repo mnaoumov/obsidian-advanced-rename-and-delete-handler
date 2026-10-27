@@ -75,8 +75,11 @@ interface ProbeHolderLinksParams {
  * The page-side state shared across the scenario's calls through a {@link ContextId}.
  */
 interface RenameWalkContext {
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   originalIterateAllRefs?: MetadataCache['iterateAllRefs'];
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   renameError?: string;
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   walkCount?: number;
 }
 
