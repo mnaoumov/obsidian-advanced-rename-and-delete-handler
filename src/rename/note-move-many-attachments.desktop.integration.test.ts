@@ -34,7 +34,7 @@ import {
  * not weaken it.
  *
  * It cannot fail that way because a note's own rewrite never shifts its own links. The handler rewrites every
- * link in one holder through ONE `editLinks` call, and `editLinks` computes all of that file's changes from a
+ * link in one holder through ONE `editReferences` call, and `editReferences` computes all of that file's changes from a
  * single metadata-cache read of a single content before applying any of them — so a link growing by a
  * longer folder name moves nothing another change is looked up by. A snapshot offset only goes stale if the
  * note's content changes between the snapshot and that read, and in this scenario nothing edits the note;
