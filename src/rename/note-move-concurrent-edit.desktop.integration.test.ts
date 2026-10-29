@@ -34,7 +34,7 @@ import {
  *
  * The second party is supplied in the smallest deterministic way there is. From inside the vault
  * `rename` event of the first attachment move — precisely the window between `RenameMap.initBacklinksMap()`
- * snapshotting its link keys and `editLinks()` looking them up against the live metadata cache — it inserts a
+ * snapshotting its link keys and `editReferences()` looking them up against the live metadata cache — it inserts a
  * line in the MIDDLE of the note, shifting the offsets of every link below it and leaving the ones above
  * untouched.
  *

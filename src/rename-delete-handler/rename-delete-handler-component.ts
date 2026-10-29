@@ -9,7 +9,7 @@ import type { PluginNoticeComponent } from '@mnaoumov/obsidian-lib/components/pl
 import type {
   EditBacklinksSnapshotParams,
   UpdateLinkParams,
-  UpdateLinksInFileParams
+  UpdateReferencesInFileParams
 } from '@mnaoumov/obsidian-lib/link';
 import type { LinkUpdateProgressReporter } from '@mnaoumov/obsidian-lib/link-update-progress';
 import type { ResourceLockComponent } from '@mnaoumov/obsidian-lib/resource-lock';
@@ -52,14 +52,14 @@ import {
 import {
   buildBacklinksSnapshot,
   editBacklinksSnapshot,
-  extractLinkFile,
+  extractReferenceFile,
   updateLink,
-  updateLinksInFile
+  updateReferencesInFile
 } from '@mnaoumov/obsidian-lib/link';
 import {
   getBacklinksForFileOrPath,
   getBacklinksForFileSafe,
-  getLinks,
+  getReferences,
   hasBacklinkCachePlugin,
   registerFileCacheForNonExistingFile,
   registerFiles
@@ -393,10 +393,10 @@ class DeleteHandler {
       const cache = this.deletedMetadataCacheMap.get(this.file.path);
       this.deletedMetadataCacheMap.delete(this.file.path);
       if (cache) {
-        const links = getLinks({ cache });
+        const links = getReferences({ cache });
 
-        for (const link of links) {
-          const attachmentFile = extractLinkFile({ app: this.app, link, sourcePathOrFile: this.file.path });
+        for (const reference of links) {
+          const attachmentFile = extractReferenceFile({ app: this.app, reference, sourcePathOrFile: this.file.path });
           if (!attachmentFile || this.settingsManager.isNoteEx(attachmentFile.path)) {
             continue;
           }
@@ -1165,7 +1165,9 @@ class RenameHandler {
       await editBacklinksSnapshot(normalizeOptionalProperties<EditBacklinksSnapshotParams<string>>({
         abortSignal: this.abortSignal,
         app: this.app,
-        linkConverter: ({ link, payload: oldAttachmentPath, sourcePath: newBacklinkPath }) => {
+        linkUpdateProgressReporter: this.linkUpdateProgressReporter ?? undefined,
+        pluginNoticeComponent,
+        referenceConverter: ({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }) => {
           const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
           linkIndexes.set(newBacklinkPath, linkIndex);
 
@@ -1178,7 +1180,7 @@ class RenameHandler {
              * invisible: every skipped link left a broken embed and reported nothing.
              */
             getLibDebugger('RenameDeleteHandler:updateBacklinks')(
-              `No snapshot entry for link ${toJson(link)} in ${newBacklinkPath}; leaving it unchanged.`
+              `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
             );
             return;
           }
@@ -1190,26 +1192,24 @@ class RenameHandler {
 
           return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
             app: this.app,
-            link,
             newSourcePathOrFile: newBacklinkPath,
             newTargetPathOrFile: newAttachmentPath,
             oldTargetPathOrFile: oldAttachmentPath,
+            reference,
             shouldUpdateFileNameAlias: settings.shouldUpdateFileNameAliases
           }));
         },
-        linkIdentityKeyProvider: getLinkIdentityKey,
-        linkUpdateProgressReporter: this.linkUpdateProgressReporter ?? undefined,
-        pluginNoticeComponent,
+        referenceIdentityKeyProvider: getLinkIdentityKey,
         resourceLockComponent: this.resourceLockComponent,
         shouldFailOnMissingFile: false,
         // The converter logs every link it declines, so it has to be shown the ones the snapshot does not name.
-        shouldVisitUnmatchedLinks: true,
+        shouldVisitUnmatchedReferences: true,
         snapshot: combinedBacklinksMap
       }));
       this.abortSignal.throwIfAborted();
 
       if (isNote(this.newPath)) {
-        await updateLinksInFile(normalizeOptionalProperties<UpdateLinksInFileParams>({
+        await updateReferencesInFile(normalizeOptionalProperties<UpdateReferencesInFileParams>({
           app: this.app,
           newSourcePathOrFile: this.newPath,
           oldSourcePathOrFile: this.oldPath,
@@ -1366,7 +1366,7 @@ class RenameMap {
     this.oldCache = params.oldCache;
     this.oldPath = params.oldPath;
     this.newPath = params.newPath;
-    this.oldPathLinks = this.oldCache ? getLinks({ cache: this.oldCache }) : [];
+    this.oldPathLinks = this.oldCache ? getReferences({ cache: this.oldCache }) : [];
   }
 
   public entries(): IterableIterator<[string, string]> {
@@ -1433,7 +1433,7 @@ class RenameMap {
     } else {
       for (const oldPathLink of this.oldPathLinks) {
         this.abortSignal.throwIfAborted();
-        const oldAttachmentFile = extractLinkFile({ app: this.app, link: oldPathLink, sourcePathOrFile: this.oldPath });
+        const oldAttachmentFile = extractReferenceFile({ app: this.app, reference: oldPathLink, sourcePathOrFile: this.oldPath });
         if (!oldAttachmentFile) {
           continue;
         }
@@ -1503,16 +1503,16 @@ class RenameMap {
     } = params;
     buildBacklinksSnapshot<string>({
       backlinks: singleBacklinksMap,
-      linkIdentityKeyProvider: getLinkIdentityKey,
       pathRemapper: (backlinkPath) => this.map.get(backlinkPath) ?? backlinkPath,
       payloadProvider: () => path,
+      referenceIdentityKeyProvider: getLinkIdentityKey,
       target: combinedBacklinksMap
     });
   }
 
   public initOriginalLinksMap(combinedBacklinksMap: Map<string, Map<string, string>>): void {
     for (const oldPathLink of this.oldPathLinks) {
-      const oldAttachmentFile = extractLinkFile({ app: this.app, link: oldPathLink, sourcePathOrFile: this.oldPath });
+      const oldAttachmentFile = extractReferenceFile({ app: this.app, reference: oldPathLink, sourcePathOrFile: this.oldPath });
       if (!oldAttachmentFile) {
         continue;
       }
