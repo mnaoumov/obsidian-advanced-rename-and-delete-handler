@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## Filing an issue (for AI agents and humans)
+
+Open issues through the [issue forms](https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/issues/new/choose), not as blank issues.
+
+Filing from the CLI or the API (`gh issue create --body`, or an AI agent filing for you) skips the form, and `gh issue create --template` cannot load an issue form. In that case, open the matching form in [`.github/ISSUE_TEMPLATE/`](https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/tree/HEAD/.github/ISSUE_TEMPLATE), copy every field as a `### <label>` heading in the form's order, and fill in each one. Always state the plugin version, the Obsidian version and your operating system.
+
 ## Source layout: one folder per subject, tests beside what they test
 
 `src/` holds only the entry point and the plugin class (`main.ts`, `plugin.ts` and their tests). Everything else sits in a subject folder, and an integration suite goes with the subject it pins rather than with the other integration suites: `rename-delete-handler/` (the handler copy and what only it uses), `rename/`, `canvas/`, `rescue/`, `empty-folders/` (the sweep, its command and the deleted note's own folder), `settings/` (including the first-load notice and the integration suites' shared settings snapshot), `plugin-api/` (the published API, its migration dialog and the dependents list), `coexistence/` (conflicts with other plugins and their locks), `performance/` (the `desktop-performance` suites) and `demo-vault-and-screenshots/`. A new file joins the folder of its subject; a new subject gets a folder only once it has at least three files.
