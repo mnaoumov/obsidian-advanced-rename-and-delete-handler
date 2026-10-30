@@ -4,6 +4,7 @@ import type {
 } from '@mnaoumov/obsidian-lib/components/plugin-gate-component';
 import type { PluginApiDeclaration } from '@mnaoumov/obsidian-lib/plugin/plugin-api';
 
+import { OpenBugReportCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-bug-report-command-handler';
 import { OpenDemoVaultCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-demo-vault-command-handler';
 import { PluginConflictSeverity } from '@mnaoumov/obsidian-lib/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from '@mnaoumov/obsidian-lib/components/plugin-settings-tab-component';
@@ -246,6 +247,11 @@ export class Plugin extends PluginBase {
         app: this.app,
         pluginNoticeComponent: this.pluginNoticeComponent,
         pluginSettingsComponent
+      }),
+      new OpenBugReportCommandHandler({
+        app: this.app,
+        gitHubRepo: 'mnaoumov/obsidian-advanced-rename-and-delete-handler',
+        pluginId: this.manifest.id
       }),
       new OpenDemoVaultCommandHandler({
         app: this.app,
