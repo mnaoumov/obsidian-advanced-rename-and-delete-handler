@@ -21,7 +21,9 @@ import type {
 import type {
   App,
   CachedMetadata,
+  FrontmatterLinkCache,
   Reference,
+  ReferenceCache,
   TAbstractFile,
   TFile,
   TFolder
@@ -75,6 +77,7 @@ import {
 import { isResourceLockedForPathByAncestor } from '@mnaoumov/obsidian-lib/resource-lock';
 import {
   cleanupEmptyFolders,
+  createFolderSafe,
   EmptyFolderBehavior,
   getSafeRenamePath,
   isChildOrSelf,
@@ -85,6 +88,7 @@ import { deleteIfNotUsed } from '@mnaoumov/obsidian-lib/vault-delete';
 import { filterInPlace } from '@mnaoumov/typescript-lib/array';
 import { getLibDebugger } from '@mnaoumov/typescript-lib/debug';
 import { printError } from '@mnaoumov/typescript-lib/error';
+import { noop } from '@mnaoumov/typescript-lib/function';
 import {
   normalizeOptionalProperties,
   toJson
@@ -466,7 +470,6 @@ class BacklinkBatch {
     return current;
   }
 }
-
 class DeleteHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
@@ -1870,6 +1873,11 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
 
   private readonly interruptedRenamesMap = new Map<string, InterruptedRename[]>();
 
+  /**
+   * Set while {@link moveMany} renames files, whose links it rewrites itself afterwards.
+   */
+  private isMovingMany = false;
+
   private readonly rescueDecisionScope = new RescueDecisionScope();
 
   /**
@@ -1886,6 +1894,91 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.settingsBuilder = params.settingsBuilder;
     this.settingsManager = new SettingsManager(this.settingsBuilder);
+  }
+
+  /**
+   * Moves many files at once, the way a script outside Obsidian would, and keeps every link pointing where it
+   * pointed. First every link that a move affects is resolved, while the vault is still as it was: each moved
+   * note's own links and every link to a moved file. Then all files move with no link update in between, and
+   * each affected note is rewritten once, from that snapshot, against the final layout.
+   *
+   * Unlike {@link runInBatch}, nothing is done per file except the rename itself: attachments do not follow their
+   * note implicitly, so put them in `plan` too. Links held in canvas files are not followed.
+   *
+   * @param plan - Each file to move, by its current path, with the path to move it to. No target may exist yet.
+   * @returns A {@link Promise} that resolves once every file is moved and every affected note rewritten.
+   */
+  public async moveMany(plan: ReadonlyMap<string, string>): Promise<void> {
+    if (this.isMovingMany || this.backlinkBatch) {
+      throw new Error('A rename batch is already running.');
+    }
+
+    for (const [oldPath, newPath] of plan) {
+      if (!getFileOrNull({ app: this.app, pathOrFile: oldPath })) {
+        throw new Error(`Cannot move ${oldPath}: no such file.`);
+      }
+      if (this.app.vault.getAbstractFileByPath(newPath)) {
+        throw new Error(`Cannot move ${oldPath} to ${newPath}: the target exists.`);
+      }
+    }
+
+    // For each affected note: each of its links to a file, keyed by where the link sits, with the file it resolves to.
+    const snapshot = new Map<string, Map<string, string>>();
+    for (const [sourcePath, targetCounts] of Object.entries(this.app.metadataCache.resolvedLinks)) {
+      if (!plan.has(sourcePath) && Object.keys(targetCounts).every((targetPath) => !plan.has(targetPath))) {
+        continue;
+      }
+      const cache = this.app.metadataCache.getCache(sourcePath);
+      if (!cache) {
+        continue;
+      }
+      const linkTargets = new Map<string, string>();
+      for (const reference of getReferences({ cache })) {
+        const target = extractReferenceFile({ app: this.app, reference, sourcePathOrFile: sourcePath });
+        if (target && (plan.has(sourcePath) || plan.has(target.path))) {
+          linkTargets.set(getReferenceKey(reference), target.path);
+        }
+      }
+      if (linkTargets.size > 0) {
+        snapshot.set(sourcePath, linkTargets);
+      }
+    }
+
+    /*
+     * The File Explorer re-sorts every folder it shows after each rename it sees, which costs time in proportion to
+     * the size of the vault: 4,096 renames out of one folder spent most of ten minutes sorting. It sorts once, after.
+     */
+    const restoreSorting = this.deferFileExplorerSorting();
+
+    const oldFolderPaths = new Set<string>();
+    this.isMovingMany = true;
+    try {
+      for (const [oldPath, newPath] of plan) {
+        const folderPath = dirname(newPath);
+        if (!getFolderOrNull({ app: this.app, pathOrFolder: folderPath })) {
+          await createFolderSafe(this.app, folderPath);
+        }
+        oldFolderPaths.add(dirname(oldPath));
+        await this.app.vault.rename(getFile({ app: this.app, pathOrFile: oldPath }), newPath);
+      }
+
+      await cleanupEmptyFolders({
+        app: this.app,
+        emptyFolderBehavior: this.settingsManager.getSettings().emptyFolderBehavior ?? EmptyFolderBehavior.Keep,
+        folderPaths: [...oldFolderPaths]
+      });
+    } finally {
+      this.isMovingMany = false;
+      restoreSorting();
+    }
+
+    // Each note is its own file, so the rewrites are independent; a few at a time keep the file system busy.
+    const pending = [...snapshot];
+    await Promise.all(Array.from({ length: MOVE_MANY_REWRITE_CONCURRENCY }, async () => {
+      for (let next = pending.pop(); next; next = pending.pop()) {
+        await this.rewriteMovedReferences(plan, ...next);
+      }
+    }));
   }
 
   /**
@@ -1988,6 +2081,26 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     }
   }
 
+  /**
+   * Stops every File Explorer from re-sorting until the returned function is called, which sorts each once.
+   *
+   * @returns The function that restores sorting.
+   */
+  private deferFileExplorerSorting(): () => void {
+    const views = this.app.workspace.getLeavesOfType(FILE_EXPLORER_VIEW_TYPE).map((leaf): unknown => leaf.view).filter(isSortableView);
+    const requestSorts = views.map((view) => view.requestSort);
+    for (const view of views) {
+      // The view's own property shadows the debounced sort; the original is put back below.
+      Object.assign(view, { requestSort: noop });
+    }
+    return (): void => {
+      for (const [index, view] of views.entries()) {
+        Object.assign(view, { requestSort: requestSorts[index] ?? noop });
+        view.requestSort();
+      }
+    };
+  }
+
   private handleDelete(file: TAbstractFile): void {
     /*
      * Entered synchronously, as the deletion is ENQUEUED rather than as it runs. A folder deletion is
@@ -2031,6 +2144,9 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
   }
 
   private handleRename(file: TAbstractFile, oldPath: string): void {
+    if (this.isMovingMany) {
+      return;
+    }
     this.backlinkBatch?.recordRename(oldPath, file.path);
 
     if (!isFile(file)) {
@@ -2130,6 +2246,40 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
       && !(settings.isNote?.(oldPath) ?? false)
       && !(settings.isNote?.(newPath) ?? false)
       && (settings.emptyFolderBehavior ?? EmptyFolderBehavior.Keep) === EmptyFolderBehavior.Keep;
+  }
+
+  /**
+   * Rewrites one note's links after {@link moveMany}, from the snapshot taken before the moves.
+   *
+   * @param plan - The moves, by old path.
+   * @param oldSourcePath - The path the note had before the moves.
+   * @param linkTargets - Its links, keyed by where they sit, with the path each resolved to before the moves.
+   * @returns A {@link Promise} that resolves once the note is rewritten.
+   */
+  private async rewriteMovedReferences(plan: ReadonlyMap<string, string>, oldSourcePath: string, linkTargets: Map<string, string>): Promise<void> {
+    const shouldUpdateFileNameAlias = this.settingsManager.getSettings().shouldUpdateFileNameAliases;
+    const newSourcePath = plan.get(oldSourcePath) ?? oldSourcePath;
+    await editReferences({
+      app: this.app,
+      pathOrFile: newSourcePath,
+      pluginNoticeComponent: this.pluginNoticeComponent,
+      referenceConverter: (reference) => {
+        const oldTargetPath = linkTargets.get(getReferenceKey(reference));
+        if (oldTargetPath === undefined) {
+          return;
+        }
+        return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
+          app: this.app,
+          newSourcePathOrFile: newSourcePath,
+          newTargetPathOrFile: plan.get(oldTargetPath) ?? oldTargetPath,
+          oldSourcePathOrFile: oldSourcePath,
+          oldTargetPathOrFile: oldTargetPath,
+          reference,
+          shouldUpdateFileNameAlias
+        }));
+      },
+      resourceLockComponent: this.resourceLockComponent
+    });
   }
 }
 
@@ -2329,6 +2479,36 @@ function getLinkIdentityKey(link: Reference): string {
     link: link.link,
     original: link.original
   });
+}
+
+const MOVE_MANY_REWRITE_CONCURRENCY = 8;
+const FILE_EXPLORER_VIEW_TYPE = 'file-explorer';
+
+/**
+ * The part of Obsidian's File Explorer view that re-sorts its tree.
+ */
+interface SortableView {
+  readonly requestSort: () => void;
+}
+
+/**
+ * Where a reference sits in its note, which a rename leaves unchanged.
+ *
+ * @param reference - A reference from the note's metadata cache.
+ * @returns The body offset of a link or embed, or the frontmatter key of a property link.
+ */
+function getReferenceKey(reference: Reference): string {
+  return 'key' in reference ? `frontmatter:${(reference as FrontmatterLinkCache).key}` : `body:${String((reference as ReferenceCache).position.start.offset)}`;
+}
+
+/**
+ * Tells whether a view can re-sort its tree on request, as the File Explorer does.
+ *
+ * @param view - Any view.
+ * @returns Whether it has `requestSort`.
+ */
+function isSortableView(view: unknown): view is SortableView {
+  return typeof (view as Partial<SortableView>).requestSort === 'function';
 }
 
 /**
