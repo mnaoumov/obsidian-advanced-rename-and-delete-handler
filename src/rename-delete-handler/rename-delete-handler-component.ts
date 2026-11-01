@@ -53,7 +53,9 @@ import {
 import {
   buildBacklinksSnapshot,
   editBacklinksSnapshot,
+  editReferences,
   extractReferenceFile,
+  splitSubpath,
   updateLink,
   updateReferencesInFile
 } from '@mnaoumov/obsidian-lib/link';
@@ -66,7 +68,10 @@ import {
   registerFiles
 } from '@mnaoumov/obsidian-lib/metadata-cache';
 import { getObsidianLibState } from '@mnaoumov/obsidian-lib/obsidian-lib-state';
-import { addToQueue } from '@mnaoumov/obsidian-lib/queue';
+import {
+  addToQueue,
+  flushQueue
+} from '@mnaoumov/obsidian-lib/queue';
 import { isResourceLockedForPathByAncestor } from '@mnaoumov/obsidian-lib/resource-lock';
 import {
   cleanupEmptyFolders,
@@ -248,6 +253,17 @@ interface DidRescueStillUsedAttachmentParams {
   readonly settingsManager: SettingsManager;
 }
 
+interface EditRenameBacklinksParams {
+  readonly abortSignal: AbortSignal;
+  readonly app: App;
+  readonly getNewTargetPath: (oldTargetPath: string) => string;
+  readonly linkUpdateProgressReporter: LinkUpdateProgressReporter | null;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly resourceLockComponent: null | ResourceLockComponent;
+  readonly shouldUpdateFileNameAliases: boolean | undefined;
+  readonly snapshot: Map<string, Map<string, string>>;
+}
+
 interface FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams {
   readonly app: App;
   readonly fileManager: FileManager;
@@ -300,6 +316,7 @@ interface RenameDeleteHandlerComponentConstructorParams {
 interface RenameHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
+  readonly backlinkBatch: BacklinkBatch | null;
   readonly handledRenames: HandledRenames;
   readonly interruptedCombinedBacklinksMap?: Map<string, Map<string, string>>;
   readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -347,6 +364,107 @@ interface RescueStillUsedUnitFoldersParams {
   readonly rootFolder: TFolder;
   readonly settingsManager: SettingsManager;
   readonly shouldProtectIfStillUsed?: (this: void, file: TFile) => boolean;
+}
+
+/**
+ * The backlink rewrites of a batch of renames, held back so that each linking note is rewritten once, after the
+ * whole batch, instead of once per renamed file it links to. See {@link RenameDeleteHandlerComponent.runInBatch}.
+ *
+ * Every rename in the batch still moves its file and its attachments, and still rewrites the moved note's own
+ * links, at once. Only the rewrites of OTHER notes' links wait. Until the flush those links point at paths that
+ * no longer exist, so a batch that dies midway leaves them dangling.
+ */
+class BacklinkBatch {
+  private readonly forwardPaths = new Map<string, string>();
+  /**
+   * Each file renamed during the batch, by its current path, with the path it had before the batch.
+   */
+  private readonly originalPaths = new Map<string, string>();
+  private readonly snapshot = new Map<string, Map<string, string>>();
+
+  /**
+   * Holds back one rename's backlink snapshot: for each linking note, the link keys and the path each link
+   * pointed at.
+   *
+   * @param combinedBacklinksMap - The snapshot {@link RenameHandler} would otherwise rewrite at once.
+   */
+  public add(combinedBacklinksMap: Map<string, Map<string, string>>): void {
+    for (const [backlinkPath, linkKeyToPathMap] of combinedBacklinksMap) {
+      let merged = this.snapshot.get(backlinkPath);
+      if (!merged) {
+        merged = new Map<string, string>();
+        this.snapshot.set(backlinkPath, merged);
+      }
+      for (const [linkKey, oldTargetPath] of linkKeyToPathMap) {
+        if (!merged.has(linkKey)) {
+          merged.set(linkKey, oldTargetPath);
+        }
+      }
+    }
+  }
+
+  /**
+   * The files renamed during the batch.
+   *
+   * @returns Each one's current path and the path it had before the batch.
+   */
+  public getRenamedFiles(): MapIterator<[string, string]> {
+    return this.originalPaths.entries();
+  }
+
+  /**
+   * The held-back snapshot, its linking notes moved to where they are now.
+   *
+   * @returns The snapshot to rewrite.
+   */
+  public getResolvedSnapshot(): Map<string, Map<string, string>> {
+    const resolved = new Map<string, Map<string, string>>();
+    for (const [backlinkPath, linkKeyToPathMap] of this.snapshot) {
+      const currentPath = this.resolve(backlinkPath);
+      const merged = resolved.get(currentPath);
+      if (!merged) {
+        resolved.set(currentPath, linkKeyToPathMap);
+        continue;
+      }
+      for (const [linkKey, oldTargetPath] of linkKeyToPathMap) {
+        if (!merged.has(linkKey)) {
+          merged.set(linkKey, oldTargetPath);
+        }
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Records a rename made during the batch, so that a path recorded before it can be followed to where the file
+   * is now.
+   *
+   * @param oldPath - The path the file had.
+   * @param newPath - The path it has now.
+   */
+  public recordRename(oldPath: string, newPath: string): void {
+    this.forwardPaths.set(oldPath, newPath);
+    const originalPath = this.originalPaths.get(oldPath) ?? oldPath;
+    this.originalPaths.delete(oldPath);
+    this.originalPaths.set(newPath, originalPath);
+  }
+
+  /**
+   * Follows a path through the renames recorded during the batch. A path that a batch frees and then reuses for
+   * another file would be followed wrongly; a batch must not do that.
+   *
+   * @param path - A path a file had at some point during the batch.
+   * @returns The path that file has now.
+   */
+  public resolve(path: string): string {
+    let current = path;
+    const seen = new Set<string>();
+    for (let next = this.forwardPaths.get(current); next !== undefined && !seen.has(next); next = this.forwardPaths.get(current)) {
+      seen.add(current);
+      current = next;
+    }
+    return current;
+  }
 }
 
 class DeleteHandler {
@@ -1110,6 +1228,7 @@ class MetadataDeletedHandler {
 class RenameHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
+  private readonly backlinkBatch: BacklinkBatch | null;
   private readonly handledRenames: HandledRenames;
   private readonly interruptedCombinedBacklinksMap: Map<string, Map<string, string>>;
   private readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -1125,6 +1244,7 @@ class RenameHandler {
   public constructor(params: RenameHandlerConstructorParams) {
     this.abortSignal = params.abortSignal;
     this.app = params.app;
+    this.backlinkBatch = params.backlinkBatch;
     this.resourceLockComponent = params.resourceLockComponent;
     this.handledRenames = params.handledRenames;
     this.interruptedCombinedBacklinksMap = params.interruptedCombinedBacklinksMap ?? new Map<string, Map<string, string>>();
@@ -1266,52 +1386,21 @@ class RenameHandler {
         }
       }
 
-      const linkIndexes = new Map<string, number>();
-      await editBacklinksSnapshot(normalizeOptionalProperties<EditBacklinksSnapshotParams<string>>({
-        abortSignal: this.abortSignal,
-        app: this.app,
-        linkUpdateProgressReporter: this.linkUpdateProgressReporter ?? undefined,
-        pluginNoticeComponent,
-        referenceConverter: ({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }) => {
-          const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
-          linkIndexes.set(newBacklinkPath, linkIndex);
-
-          if (!oldAttachmentPath) {
-            /*
-             * A link that is not in the snapshot was either never ours to rewrite, or was already
-             * rewritten by someone else (leaving it correct). Either way there is nothing to do -
-             * but log it, because a silent skip here is exactly how
-             * https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/60 stayed
-             * invisible: every skipped link left a broken embed and reported nothing.
-             */
-            getLibDebugger('RenameDeleteHandler:updateBacklinks')(
-              `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
-            );
-            return;
-          }
-
-          const newAttachmentPath = renameMap.get(oldAttachmentPath) ?? oldAttachmentPath;
-
-          renamedFilePaths.add(newBacklinkPath);
-          renamedLinks.add(`${newBacklinkPath}//${String(linkIndex)}`);
-
-          return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
-            app: this.app,
-            newSourcePathOrFile: newBacklinkPath,
-            newTargetPathOrFile: newAttachmentPath,
-            oldTargetPathOrFile: oldAttachmentPath,
-            reference,
-            shouldUpdateFileNameAlias: settings.shouldUpdateFileNameAliases
-          }));
-        },
-        referenceIdentityKeyProvider: getLinkIdentityKey,
-        resourceLockComponent: this.resourceLockComponent,
-        shouldFailOnMissingFile: false,
-        // The converter logs every link it declines, so it has to be shown the ones the snapshot does not name.
-        shouldVisitUnmatchedReferences: true,
-        snapshot: combinedBacklinksMap
-      }));
-      this.abortSignal.throwIfAborted();
+      if (this.backlinkBatch) {
+        this.backlinkBatch.add(combinedBacklinksMap);
+      } else {
+        await editRenameBacklinks({
+          abortSignal: this.abortSignal,
+          app: this.app,
+          getNewTargetPath: (oldTargetPath) => renameMap.get(oldTargetPath) ?? oldTargetPath,
+          linkUpdateProgressReporter: this.linkUpdateProgressReporter,
+          pluginNoticeComponent,
+          resourceLockComponent: this.resourceLockComponent,
+          shouldUpdateFileNameAliases: settings.shouldUpdateFileNameAliases,
+          snapshot: combinedBacklinksMap
+        });
+        this.abortSignal.throwIfAborted();
+      }
 
       if (isNote(this.newPath)) {
         await updateReferencesInFile(normalizeOptionalProperties<UpdateReferencesInFileParams>({
@@ -1376,6 +1465,7 @@ class RenameHandler {
       await new RenameHandler({
         abortSignal: this.abortSignal,
         app: this.app,
+        backlinkBatch: this.backlinkBatch,
         handledRenames: this.handledRenames,
         interruptedCombinedBacklinksMap: interruptedRename.combinedBacklinksMap,
         interruptedRenamesMap: this.interruptedRenamesMap,
@@ -1402,6 +1492,7 @@ class RenameHandler {
     await new RenameHandler({
       abortSignal: this.abortSignal,
       app: this.app,
+      backlinkBatch: this.backlinkBatch,
       handledRenames: this.handledRenames,
       interruptedRenamesMap: this.interruptedRenamesMap,
       linkUpdateProgressReporter: this.linkUpdateProgressReporter,
@@ -1771,6 +1862,8 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
    */
   protected readonly settingsManager: SettingsManager;
 
+  private backlinkBatch: BacklinkBatch | null = null;
+
   private readonly deletedMetadataCacheMap = new Map<string, CachedMetadata>();
 
   private readonly handledRenames = new HandledRenames();
@@ -1821,6 +1914,80 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     );
   }
 
+  /**
+   * Runs `operation`, which renames many files, and rewrites each note that links to them once, after all of
+   * them, instead of once per renamed file. Every rename still moves its file and attachments, and rewrites the
+   * renamed note's own links, as it happens; only the rewrites of other notes' links are held back
+   * ({@link BacklinkBatch}). A vault-wide move that touches a big list note hundreds of times touches it once.
+   *
+   * @param operation - Performs the renames. A rename must not reuse a path another rename in it frees.
+   * @returns A {@link Promise} that resolves once every held-back link is rewritten.
+   */
+  public async runInBatch(operation: () => Promise<void>): Promise<void> {
+    if (this.backlinkBatch) {
+      throw new Error('A rename batch is already running.');
+    }
+
+    const backlinkBatch = new BacklinkBatch();
+    this.backlinkBatch = backlinkBatch;
+    try {
+      await operation();
+      // The batch's rename handlers are queued; each adds its snapshot to the batch when it runs.
+      await flushQueue();
+    } finally {
+      this.backlinkBatch = null;
+    }
+
+    await editRenameBacklinks({
+      abortSignal: this.abortSignalComponent.abortSignal,
+      app: this.app,
+      getNewTargetPath: (oldTargetPath) => backlinkBatch.resolve(oldTargetPath),
+      linkUpdateProgressReporter: this.linkUpdateProgressReporter,
+      pluginNoticeComponent: this.pluginNoticeComponent,
+      resourceLockComponent: this.resourceLockComponent,
+      shouldUpdateFileNameAliases: this.settingsManager.getSettings().shouldUpdateFileNameAliases,
+      snapshot: backlinkBatch.getResolvedSnapshot()
+    });
+
+    /*
+     * A renamed note's own links were rewritten when it moved, against the vault as it stood then. A link to a
+     * file that moved LATER in the batch was missed both ways: it no longer resolved from the note's new folder
+     * when the target moved, so it was not in the target's snapshot either. Resolve each still-dangling link from
+     * where the note was before the batch, and follow the target through the batch's renames.
+     */
+    for (const [currentPath, originalPath] of backlinkBatch.getRenamedFiles()) {
+      if (!isNote(currentPath) || !getFileOrNull({ app: this.app, pathOrFile: currentPath })) {
+        continue;
+      }
+      await editReferences({
+        app: this.app,
+        pathOrFile: currentPath,
+        pluginNoticeComponent: this.pluginNoticeComponent,
+        referenceConverter: (reference) => {
+          const { linkPath } = splitSubpath(reference.link);
+          if (!linkPath || this.app.metadataCache.getFirstLinkpathDest(linkPath, currentPath)) {
+            return;
+          }
+          const oldTargetPath = join(dirname(originalPath), linkPath);
+          const newTargetPath = [backlinkBatch.resolve(oldTargetPath), backlinkBatch.resolve(`${oldTargetPath}.md`)]
+            .find((path) => getFileOrNull({ app: this.app, pathOrFile: path }) !== null);
+          if (!newTargetPath) {
+            return;
+          }
+          return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
+            app: this.app,
+            newSourcePathOrFile: currentPath,
+            newTargetPathOrFile: newTargetPath,
+            oldTargetPathOrFile: oldTargetPath,
+            reference,
+            shouldUpdateFileNameAlias: this.settingsManager.getSettings().shouldUpdateFileNameAliases
+          }));
+        },
+        resourceLockComponent: this.resourceLockComponent
+      });
+    }
+  }
+
   private handleDelete(file: TAbstractFile): void {
     /*
      * Entered synchronously, as the deletion is ENQUEUED rather than as it runs. A folder deletion is
@@ -1864,6 +2031,8 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
   }
 
   private handleRename(file: TAbstractFile, oldPath: string): void {
+    this.backlinkBatch?.recordRename(oldPath, file.path);
+
     if (!isFile(file)) {
       return;
     }
@@ -1930,6 +2099,7 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
         new RenameHandler({
           abortSignal,
           app: this.app,
+          backlinkBatch: this.backlinkBatch,
           handledRenames: this.handledRenames,
           interruptedRenamesMap: this.interruptedRenamesMap,
           linkUpdateProgressReporter: this.linkUpdateProgressReporter,
@@ -2063,6 +2233,60 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
     printError(new Error(`Failed to rescue ${attachmentPath} to ${unitFolderMove?.newFolderPath ?? rescueDestination.attachmentPath}`, { cause: error }));
     return false;
   }
+}
+
+/**
+ * Rewrites, in each linking note of `snapshot`, the links that pointed at a renamed file, so they point at its new
+ * path. Used per rename, and once for a whole batch ({@link BacklinkBatch}).
+ *
+ * @param params - The snapshot and how to find each renamed file's new path.
+ */
+async function editRenameBacklinks(params: EditRenameBacklinksParams): Promise<void> {
+  const renamedFilePaths = getObsidianLibState('renamedFilePaths', new Set<string>()).value;
+  const renamedLinks = getObsidianLibState('renamedLinkPaths', new Set<string>()).value;
+  const linkIndexes = new Map<string, number>();
+  await editBacklinksSnapshot(normalizeOptionalProperties<EditBacklinksSnapshotParams<string>>({
+    abortSignal: params.abortSignal,
+    app: params.app,
+    linkUpdateProgressReporter: params.linkUpdateProgressReporter ?? undefined,
+    pluginNoticeComponent: params.pluginNoticeComponent,
+    referenceConverter: ({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }) => {
+      const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
+      linkIndexes.set(newBacklinkPath, linkIndex);
+
+      if (!oldAttachmentPath) {
+        /*
+         * A link that is not in the snapshot was either never ours to rewrite, or was already
+         * rewritten by someone else (leaving it correct). Either way there is nothing to do -
+         * but log it, because a silent skip here is exactly how
+         * https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/60 stayed
+         * invisible: every skipped link left a broken embed and reported nothing.
+         */
+        getLibDebugger('RenameDeleteHandler:updateBacklinks')(
+          `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
+        );
+        return;
+      }
+
+      renamedFilePaths.add(newBacklinkPath);
+      renamedLinks.add(`${newBacklinkPath}//${String(linkIndex)}`);
+
+      return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
+        app: params.app,
+        newSourcePathOrFile: newBacklinkPath,
+        newTargetPathOrFile: params.getNewTargetPath(oldAttachmentPath),
+        oldTargetPathOrFile: oldAttachmentPath,
+        reference,
+        shouldUpdateFileNameAlias: params.shouldUpdateFileNameAliases
+      }));
+    },
+    referenceIdentityKeyProvider: getLinkIdentityKey,
+    resourceLockComponent: params.resourceLockComponent,
+    shouldFailOnMissingFile: false,
+    // The converter logs every link it declines, so it has to be shown the ones the snapshot does not name.
+    shouldVisitUnmatchedReferences: true,
+    snapshot: params.snapshot
+  }));
 }
 
 /**
