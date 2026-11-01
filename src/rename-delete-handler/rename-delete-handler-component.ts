@@ -21,7 +21,9 @@ import type {
 import type {
   App,
   CachedMetadata,
+  FrontmatterLinkCache,
   Reference,
+  ReferenceCache,
   TAbstractFile,
   TFile,
   TFolder
@@ -34,6 +36,7 @@ import {
   hasOwnAttachmentFolder
 } from '@mnaoumov/obsidian-lib/attachment-path';
 import { rebasePathOntoFolder } from '@mnaoumov/obsidian-lib/attachment-unit-folder';
+import { iterateReferencesAffectedByRename } from '@mnaoumov/obsidian-lib/backlink-index';
 import { getCanvasReferences } from '@mnaoumov/obsidian-lib/canvas';
 import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import { MonkeyAroundComponent } from '@mnaoumov/obsidian-lib/components/monkey-around-component';
@@ -52,7 +55,9 @@ import {
 import {
   buildBacklinksSnapshot,
   editBacklinksSnapshot,
+  editReferences,
   extractReferenceFile,
+  splitSubpath,
   updateLink,
   updateReferencesInFile
 } from '@mnaoumov/obsidian-lib/link';
@@ -65,10 +70,14 @@ import {
   registerFiles
 } from '@mnaoumov/obsidian-lib/metadata-cache';
 import { getObsidianLibState } from '@mnaoumov/obsidian-lib/obsidian-lib-state';
-import { addToQueue } from '@mnaoumov/obsidian-lib/queue';
+import {
+  addToQueue,
+  flushQueue
+} from '@mnaoumov/obsidian-lib/queue';
 import { isResourceLockedForPathByAncestor } from '@mnaoumov/obsidian-lib/resource-lock';
 import {
   cleanupEmptyFolders,
+  createFolderSafe,
   EmptyFolderBehavior,
   getSafeRenamePath,
   isChildOrSelf,
@@ -79,6 +88,7 @@ import { deleteIfNotUsed } from '@mnaoumov/obsidian-lib/vault-delete';
 import { filterInPlace } from '@mnaoumov/typescript-lib/array';
 import { getLibDebugger } from '@mnaoumov/typescript-lib/debug';
 import { printError } from '@mnaoumov/typescript-lib/error';
+import { noop } from '@mnaoumov/typescript-lib/function';
 import {
   normalizeOptionalProperties,
   toJson
@@ -247,6 +257,17 @@ interface DidRescueStillUsedAttachmentParams {
   readonly settingsManager: SettingsManager;
 }
 
+interface EditRenameBacklinksParams {
+  readonly abortSignal: AbortSignal;
+  readonly app: App;
+  readonly getNewTargetPath: (oldTargetPath: string) => string;
+  readonly linkUpdateProgressReporter: LinkUpdateProgressReporter | null;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly resourceLockComponent: null | ResourceLockComponent;
+  readonly shouldUpdateFileNameAliases: boolean | undefined;
+  readonly snapshot: Map<string, Map<string, string>>;
+}
+
 interface FileManagerRunAsyncLinkUpdatePatchComponentConstructorParams {
   readonly app: App;
   readonly fileManager: FileManager;
@@ -282,6 +303,11 @@ interface MoveUnitFolderParams {
   readonly unitFolderMove: UnitFolderMove;
 }
 
+interface PendingRename {
+  readonly file: TFile;
+  readonly newPath: string;
+}
+
 interface RenameDeleteHandlerComponentConstructorParams {
   readonly abortSignalComponent: AbortSignalComponent;
   readonly app: App;
@@ -294,6 +320,7 @@ interface RenameDeleteHandlerComponentConstructorParams {
 interface RenameHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
+  readonly backlinkBatch: BacklinkBatch | null;
   readonly handledRenames: HandledRenames;
   readonly interruptedCombinedBacklinksMap?: Map<string, Map<string, string>>;
   readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -343,6 +370,106 @@ interface RescueStillUsedUnitFoldersParams {
   readonly shouldProtectIfStillUsed?: (this: void, file: TFile) => boolean;
 }
 
+/**
+ * The backlink rewrites of a batch of renames, held back so that each linking note is rewritten once, after the
+ * whole batch, instead of once per renamed file it links to. See {@link RenameDeleteHandlerComponent.runInBatch}.
+ *
+ * Every rename in the batch still moves its file and its attachments, and still rewrites the moved note's own
+ * links, at once. Only the rewrites of OTHER notes' links wait. Until the flush those links point at paths that
+ * no longer exist, so a batch that dies midway leaves them dangling.
+ */
+class BacklinkBatch {
+  private readonly forwardPaths = new Map<string, string>();
+  /**
+   * Each file renamed during the batch, by its current path, with the path it had before the batch.
+   */
+  private readonly originalPaths = new Map<string, string>();
+  private readonly snapshot = new Map<string, Map<string, string>>();
+
+  /**
+   * Holds back one rename's backlink snapshot: for each linking note, the link keys and the path each link
+   * pointed at.
+   *
+   * @param combinedBacklinksMap - The snapshot {@link RenameHandler} would otherwise rewrite at once.
+   */
+  public add(combinedBacklinksMap: Map<string, Map<string, string>>): void {
+    for (const [backlinkPath, linkKeyToPathMap] of combinedBacklinksMap) {
+      let merged = this.snapshot.get(backlinkPath);
+      if (!merged) {
+        merged = new Map<string, string>();
+        this.snapshot.set(backlinkPath, merged);
+      }
+      for (const [linkKey, oldTargetPath] of linkKeyToPathMap) {
+        if (!merged.has(linkKey)) {
+          merged.set(linkKey, oldTargetPath);
+        }
+      }
+    }
+  }
+
+  /**
+   * The files renamed during the batch.
+   *
+   * @returns Each one's current path and the path it had before the batch.
+   */
+  public getRenamedFiles(): MapIterator<[string, string]> {
+    return this.originalPaths.entries();
+  }
+
+  /**
+   * The held-back snapshot, its linking notes moved to where they are now.
+   *
+   * @returns The snapshot to rewrite.
+   */
+  public getResolvedSnapshot(): Map<string, Map<string, string>> {
+    const resolved = new Map<string, Map<string, string>>();
+    for (const [backlinkPath, linkKeyToPathMap] of this.snapshot) {
+      const currentPath = this.resolve(backlinkPath);
+      const merged = resolved.get(currentPath);
+      if (!merged) {
+        resolved.set(currentPath, linkKeyToPathMap);
+        continue;
+      }
+      for (const [linkKey, oldTargetPath] of linkKeyToPathMap) {
+        if (!merged.has(linkKey)) {
+          merged.set(linkKey, oldTargetPath);
+        }
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Records a rename made during the batch, so that a path recorded before it can be followed to where the file
+   * is now.
+   *
+   * @param oldPath - The path the file had.
+   * @param newPath - The path it has now.
+   */
+  public recordRename(oldPath: string, newPath: string): void {
+    this.forwardPaths.set(oldPath, newPath);
+    const originalPath = this.originalPaths.get(oldPath) ?? oldPath;
+    this.originalPaths.delete(oldPath);
+    this.originalPaths.set(newPath, originalPath);
+  }
+
+  /**
+   * Follows a path through the renames recorded during the batch. A path that a batch frees and then reuses for
+   * another file would be followed wrongly; a batch must not do that.
+   *
+   * @param path - A path a file had at some point during the batch.
+   * @returns The path that file has now.
+   */
+  public resolve(path: string): string {
+    let current = path;
+    const seen = new Set<string>();
+    for (let next = this.forwardPaths.get(current); next !== undefined && !seen.has(next); next = this.forwardPaths.get(current)) {
+      seen.add(current);
+      current = next;
+    }
+    return current;
+  }
+}
 class DeleteHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
@@ -745,9 +872,19 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
 }
 
 class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent {
+  /**
+   * The rename whose `runAsyncLinkUpdate` snapshot is about to be taken: set when Obsidian's `onCleanCache`
+   * callback for that snapshot fires, consumed by the very next `iterateAllRefs` call, which is the snapshot.
+   */
+  private activeSnapshotRename: null | PendingRename = null;
   private readonly app: App;
   private readonly fileManager: FileManager;
   private isForcingAlwaysUpdateLinks = false;
+  /**
+   * The rename `fileManager.renameFile` is performing, recorded for the `runAsyncLinkUpdate` call it makes
+   * synchronously, which is the only one that cannot otherwise tell what is being renamed.
+   */
+  private pendingRename: null | PendingRename = null;
   private readonly settingsManager: SettingsManager;
   /**
    * The canvas link updates {@link wrapLinkUpdatesHandler} took out of a `linkUpdates` array, keyed by that array,
@@ -771,7 +908,51 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
         originalMethodBound
       }) => {
         const newHandler: LinkUpdatesHandler = (linkUpdates) => this.wrapLinkUpdatesHandler(linkUpdates, linkUpdatesHandler);
-        return originalMethodBound(newHandler);
+        const rename = this.pendingRename;
+        this.pendingRename = null;
+        // With `inProgressUpdates` set, Obsidian queues the handler onto the running update and takes no snapshot.
+        return !rename || this.fileManager.inProgressUpdates
+          ? originalMethodBound(newHandler)
+          : this.withNarrowedSnapshot(rename, () => originalMethodBound(newHandler));
+      }
+    });
+
+    this.registerMethodPatch({
+      $object: this.fileManager,
+      methodName: 'renameFile',
+      patchHandler: ({
+        originalArguments: [file, newPath],
+        originalMethodBound
+      }) => {
+        if (!isFile(file)) {
+          return originalMethodBound(file, newPath);
+        }
+
+        // `renameFile` calls `runAsyncLinkUpdate` synchronously, which picks this up and clears it.
+        this.pendingRename = { file, newPath };
+        try {
+          return originalMethodBound(file, newPath);
+        } finally {
+          this.pendingRename = null;
+        }
+      }
+    });
+
+    this.registerMethodPatch({
+      $object: this.app.metadataCache,
+      methodName: 'iterateAllRefs',
+      patchHandler: ({
+        originalArguments: [callback],
+        originalMethodBound
+      }) => {
+        const rename = this.activeSnapshotRename;
+        if (!rename) {
+          originalMethodBound(callback);
+          return;
+        }
+
+        this.activeSnapshotRename = null;
+        iterateReferencesAffectedByRename(this.app, rename.file, rename.newPath, callback);
       }
     });
 
@@ -835,6 +1016,54 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
   }
 
   /**
+   * Runs `runAsyncLinkUpdate` so that its snapshot of resolved references covers only the references the rename
+   * can affect (`iterateReferencesAffectedByRename`) instead of every reference in the vault.
+   *
+   * Obsidian's `runAsyncLinkUpdate` queues a task on `fileManager.updateQueue`. The task waits for
+   * `metadataCache.onCleanCache`, then calls `metadataCache.iterateAllRefs` once to take the snapshot, then runs the
+   * handler that renames. The queued task is wrapped so that the `onCleanCache` callback it registers, and only
+   * that one, arms the narrowing, which the `iterateAllRefs` patch consumes on the next call. Both temporary swaps
+   * are undone synchronously, before anything else can call either method.
+   *
+   * @param rename - The rename being performed.
+   * @param callOriginal - Calls Obsidian's `runAsyncLinkUpdate`.
+   * @returns What `runAsyncLinkUpdate` returns.
+   */
+  private withNarrowedSnapshot(rename: PendingRename, callOriginal: () => Promise<void>): Promise<void> {
+    const updateQueue = this.fileManager.updateQueue;
+    const metadataCache = this.app.metadataCache;
+    const originalQueue = Object.getOwnPropertyDescriptor(updateQueue, 'queue');
+    const queue = updateQueue.queue.bind(updateQueue);
+
+    updateQueue.queue = <T>(task: () => Promise<T> | T): Promise<T> =>
+      queue(() => {
+        const originalOnCleanCache = Object.getOwnPropertyDescriptor(metadataCache, 'onCleanCache');
+        const onCleanCache = metadataCache.onCleanCache.bind(metadataCache);
+        metadataCache.onCleanCache = (onCleanCacheCallback: () => void): void => {
+          onCleanCache(() => {
+            this.activeSnapshotRename = rename;
+            onCleanCacheCallback();
+          });
+        };
+        let result: Promise<T> | T;
+        try {
+          result = task();
+        } finally {
+          restoreProperty(metadataCache, 'onCleanCache', originalOnCleanCache);
+        }
+        return Promise.resolve(result).finally(() => {
+          this.activeSnapshotRename = null;
+        });
+      });
+
+    try {
+      return callOriginal();
+    } finally {
+      restoreProperty(updateQueue, 'queue', originalQueue);
+    }
+  }
+
+  /**
    * Suppresses Obsidian's own link update for the renames this handler has already rewritten, by emptying the
    * `linkUpdates` array that the native {@link FileManager.runAsyncLinkUpdate} collected.
    *
@@ -843,7 +1072,8 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    *
    * - `runAsyncLinkUpdate` waits for a clean metadata cache and then walks EVERY reference in the vault
    *   (`metadataCache.iterateAllRefs`, one `getLinkpathDest` per reference) to build `linkUpdates` - before it
-   *   calls this handler. That walk is unconditional and is already paid by the time this method is entered, so
+   *   calls this handler. For a `renameFile` of a file, {@link withNarrowedSnapshot} narrows that walk to the
+   *   references the rename can affect; by the time this method is entered it has been paid either way, so
    *   nothing decided below can avoid it.
    * - `updateAllLinks(linkUpdates)`, which runs after this handler and is the only thing emptying the array
    *   skips, is linear in `linkUpdates.length`: one per-entry change computation, then a write for only the
@@ -864,15 +1094,11 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * re-points the entries whose `resolvedFile` is the note it has just trashed. Collected that late, a link to
    * a renamed or trashed file no longer resolves, its entry is never made, and the link is left dangling.
    *
-   * Narrowing the walk to the renamed subtree instead (reimplementing `runAsyncLinkUpdate`) was measured and
-   * refused (2026-09-24, Obsidian 1.14.2): the walk costs ~115 ms at 100k references and ~320 ms at 250k, and
-   * runs ONCE per `renameFile`, folder renames included - ~30% of a single note rename with this handler off,
-   * 2% of a 20-file folder rename with it on, 0.03% of a 1000-file one. Those last two shares were measured
-   * while this handler still made two backlink lookups per renamed file through Obsidian's `getBacklinksForFile`,
-   * which is the same full `iterateAllRefs` walk, so a folder rename walked the vault 2F+1 times. The lookups now
-   * go through `@mnaoumov/obsidian-lib`'s backlink helpers, whose index resolves only the references of the notes
-   * that could hold a backlink, so this walk is the only one left in a rename and its share of one has grown
-   * accordingly. It is still one walk per `renameFile`.
+   * Narrowing that walk was first measured and refused (2026-09-24, Obsidian 1.14.2): it cost ~115 ms at 100k
+   * references and ~320 ms at 250k, once per `renameFile`. A real 34k-file vault on Obsidian 1.15.0 (2026-10-31)
+   * paid 5 s for a note and 38 s for a note with ten attachments, since every attachment this handler moves is
+   * another `renameFile` and so another full walk, so the walk is now narrowed. It still runs in full, once, for
+   * a folder `renameFile` and for every other caller of `runAsyncLinkUpdate`.
    *
    * @param linkUpdates - The link updates Obsidian collected before invoking the handler.
    * @param linkUpdatesHandler - The original handler passed to {@link FileManager.runAsyncLinkUpdate}.
@@ -1005,6 +1231,7 @@ class MetadataDeletedHandler {
 class RenameHandler {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
+  private readonly backlinkBatch: BacklinkBatch | null;
   private readonly handledRenames: HandledRenames;
   private readonly interruptedCombinedBacklinksMap: Map<string, Map<string, string>>;
   private readonly interruptedRenamesMap: Map<string, InterruptedRename[]>;
@@ -1020,6 +1247,7 @@ class RenameHandler {
   public constructor(params: RenameHandlerConstructorParams) {
     this.abortSignal = params.abortSignal;
     this.app = params.app;
+    this.backlinkBatch = params.backlinkBatch;
     this.resourceLockComponent = params.resourceLockComponent;
     this.handledRenames = params.handledRenames;
     this.interruptedCombinedBacklinksMap = params.interruptedCombinedBacklinksMap ?? new Map<string, Map<string, string>>();
@@ -1161,52 +1389,21 @@ class RenameHandler {
         }
       }
 
-      const linkIndexes = new Map<string, number>();
-      await editBacklinksSnapshot(normalizeOptionalProperties<EditBacklinksSnapshotParams<string>>({
-        abortSignal: this.abortSignal,
-        app: this.app,
-        linkUpdateProgressReporter: this.linkUpdateProgressReporter ?? undefined,
-        pluginNoticeComponent,
-        referenceConverter: ({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }) => {
-          const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
-          linkIndexes.set(newBacklinkPath, linkIndex);
-
-          if (!oldAttachmentPath) {
-            /*
-             * A link that is not in the snapshot was either never ours to rewrite, or was already
-             * rewritten by someone else (leaving it correct). Either way there is nothing to do -
-             * but log it, because a silent skip here is exactly how
-             * https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/60 stayed
-             * invisible: every skipped link left a broken embed and reported nothing.
-             */
-            getLibDebugger('RenameDeleteHandler:updateBacklinks')(
-              `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
-            );
-            return;
-          }
-
-          const newAttachmentPath = renameMap.get(oldAttachmentPath) ?? oldAttachmentPath;
-
-          renamedFilePaths.add(newBacklinkPath);
-          renamedLinks.add(`${newBacklinkPath}//${String(linkIndex)}`);
-
-          return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
-            app: this.app,
-            newSourcePathOrFile: newBacklinkPath,
-            newTargetPathOrFile: newAttachmentPath,
-            oldTargetPathOrFile: oldAttachmentPath,
-            reference,
-            shouldUpdateFileNameAlias: settings.shouldUpdateFileNameAliases
-          }));
-        },
-        referenceIdentityKeyProvider: getLinkIdentityKey,
-        resourceLockComponent: this.resourceLockComponent,
-        shouldFailOnMissingFile: false,
-        // The converter logs every link it declines, so it has to be shown the ones the snapshot does not name.
-        shouldVisitUnmatchedReferences: true,
-        snapshot: combinedBacklinksMap
-      }));
-      this.abortSignal.throwIfAborted();
+      if (this.backlinkBatch) {
+        this.backlinkBatch.add(combinedBacklinksMap);
+      } else {
+        await editRenameBacklinks({
+          abortSignal: this.abortSignal,
+          app: this.app,
+          getNewTargetPath: (oldTargetPath) => renameMap.get(oldTargetPath) ?? oldTargetPath,
+          linkUpdateProgressReporter: this.linkUpdateProgressReporter,
+          pluginNoticeComponent,
+          resourceLockComponent: this.resourceLockComponent,
+          shouldUpdateFileNameAliases: settings.shouldUpdateFileNameAliases,
+          snapshot: combinedBacklinksMap
+        });
+        this.abortSignal.throwIfAborted();
+      }
 
       if (isNote(this.newPath)) {
         await updateReferencesInFile(normalizeOptionalProperties<UpdateReferencesInFileParams>({
@@ -1271,6 +1468,7 @@ class RenameHandler {
       await new RenameHandler({
         abortSignal: this.abortSignal,
         app: this.app,
+        backlinkBatch: this.backlinkBatch,
         handledRenames: this.handledRenames,
         interruptedCombinedBacklinksMap: interruptedRename.combinedBacklinksMap,
         interruptedRenamesMap: this.interruptedRenamesMap,
@@ -1297,6 +1495,7 @@ class RenameHandler {
     await new RenameHandler({
       abortSignal: this.abortSignal,
       app: this.app,
+      backlinkBatch: this.backlinkBatch,
       handledRenames: this.handledRenames,
       interruptedRenamesMap: this.interruptedRenamesMap,
       linkUpdateProgressReporter: this.linkUpdateProgressReporter,
@@ -1666,11 +1865,18 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
    */
   protected readonly settingsManager: SettingsManager;
 
+  private backlinkBatch: BacklinkBatch | null = null;
+
   private readonly deletedMetadataCacheMap = new Map<string, CachedMetadata>();
 
   private readonly handledRenames = new HandledRenames();
 
   private readonly interruptedRenamesMap = new Map<string, InterruptedRename[]>();
+
+  /**
+   * Set while {@link moveMany} renames files, whose links it rewrites itself afterwards.
+   */
+  private isMovingMany = false;
 
   private readonly rescueDecisionScope = new RescueDecisionScope();
 
@@ -1688,6 +1894,91 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.settingsBuilder = params.settingsBuilder;
     this.settingsManager = new SettingsManager(this.settingsBuilder);
+  }
+
+  /**
+   * Moves many files at once, the way a script outside Obsidian would, and keeps every link pointing where it
+   * pointed. First every link that a move affects is resolved, while the vault is still as it was: each moved
+   * note's own links and every link to a moved file. Then all files move with no link update in between, and
+   * each affected note is rewritten once, from that snapshot, against the final layout.
+   *
+   * Unlike {@link runInBatch}, nothing is done per file except the rename itself: attachments do not follow their
+   * note implicitly, so put them in `plan` too. Links held in canvas files are not followed.
+   *
+   * @param plan - Each file to move, by its current path, with the path to move it to. No target may exist yet.
+   * @returns A {@link Promise} that resolves once every file is moved and every affected note rewritten.
+   */
+  public async moveMany(plan: ReadonlyMap<string, string>): Promise<void> {
+    if (this.isMovingMany || this.backlinkBatch) {
+      throw new Error('A rename batch is already running.');
+    }
+
+    for (const [oldPath, newPath] of plan) {
+      if (!getFileOrNull({ app: this.app, pathOrFile: oldPath })) {
+        throw new Error(`Cannot move ${oldPath}: no such file.`);
+      }
+      if (this.app.vault.getAbstractFileByPath(newPath)) {
+        throw new Error(`Cannot move ${oldPath} to ${newPath}: the target exists.`);
+      }
+    }
+
+    // For each affected note: each of its links to a file, keyed by where the link sits, with the file it resolves to.
+    const snapshot = new Map<string, Map<string, string>>();
+    for (const [sourcePath, targetCounts] of Object.entries(this.app.metadataCache.resolvedLinks)) {
+      if (!plan.has(sourcePath) && Object.keys(targetCounts).every((targetPath) => !plan.has(targetPath))) {
+        continue;
+      }
+      const cache = this.app.metadataCache.getCache(sourcePath);
+      if (!cache) {
+        continue;
+      }
+      const linkTargets = new Map<string, string>();
+      for (const reference of getReferences({ cache })) {
+        const target = extractReferenceFile({ app: this.app, reference, sourcePathOrFile: sourcePath });
+        if (target && (plan.has(sourcePath) || plan.has(target.path))) {
+          linkTargets.set(getReferenceKey(reference), target.path);
+        }
+      }
+      if (linkTargets.size > 0) {
+        snapshot.set(sourcePath, linkTargets);
+      }
+    }
+
+    /*
+     * The File Explorer re-sorts every folder it shows after each rename it sees, which costs time in proportion to
+     * the size of the vault: 4,096 renames out of one folder spent most of ten minutes sorting. It sorts once, after.
+     */
+    const restoreSorting = this.deferFileExplorerSorting();
+
+    const oldFolderPaths = new Set<string>();
+    this.isMovingMany = true;
+    try {
+      for (const [oldPath, newPath] of plan) {
+        const folderPath = dirname(newPath);
+        if (!getFolderOrNull({ app: this.app, pathOrFolder: folderPath })) {
+          await createFolderSafe(this.app, folderPath);
+        }
+        oldFolderPaths.add(dirname(oldPath));
+        await this.app.vault.rename(getFile({ app: this.app, pathOrFile: oldPath }), newPath);
+      }
+
+      await cleanupEmptyFolders({
+        app: this.app,
+        emptyFolderBehavior: this.settingsManager.getSettings().emptyFolderBehavior ?? EmptyFolderBehavior.Keep,
+        folderPaths: [...oldFolderPaths]
+      });
+    } finally {
+      this.isMovingMany = false;
+      restoreSorting();
+    }
+
+    // Each note is its own file, so the rewrites are independent; a few at a time keep the file system busy.
+    const pending = [...snapshot];
+    await Promise.all(Array.from({ length: MOVE_MANY_REWRITE_CONCURRENCY }, async () => {
+      for (let next = pending.pop(); next; next = pending.pop()) {
+        await this.rewriteMovedReferences(plan, ...next);
+      }
+    }));
   }
 
   /**
@@ -1714,6 +2005,100 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
         settingsManager: this.settingsManager
       })
     );
+  }
+
+  /**
+   * Runs `operation`, which renames many files, and rewrites each note that links to them once, after all of
+   * them, instead of once per renamed file. Every rename still moves its file and attachments, and rewrites the
+   * renamed note's own links, as it happens; only the rewrites of other notes' links are held back
+   * ({@link BacklinkBatch}). A vault-wide move that touches a big list note hundreds of times touches it once.
+   *
+   * @param operation - Performs the renames. A rename must not reuse a path another rename in it frees.
+   * @returns A {@link Promise} that resolves once every held-back link is rewritten.
+   */
+  public async runInBatch(operation: () => Promise<void>): Promise<void> {
+    if (this.backlinkBatch) {
+      throw new Error('A rename batch is already running.');
+    }
+
+    const backlinkBatch = new BacklinkBatch();
+    this.backlinkBatch = backlinkBatch;
+    try {
+      await operation();
+      // The batch's rename handlers are queued; each adds its snapshot to the batch when it runs.
+      await flushQueue();
+    } finally {
+      this.backlinkBatch = null;
+    }
+
+    await editRenameBacklinks({
+      abortSignal: this.abortSignalComponent.abortSignal,
+      app: this.app,
+      getNewTargetPath: (oldTargetPath) => backlinkBatch.resolve(oldTargetPath),
+      linkUpdateProgressReporter: this.linkUpdateProgressReporter,
+      pluginNoticeComponent: this.pluginNoticeComponent,
+      resourceLockComponent: this.resourceLockComponent,
+      shouldUpdateFileNameAliases: this.settingsManager.getSettings().shouldUpdateFileNameAliases,
+      snapshot: backlinkBatch.getResolvedSnapshot()
+    });
+
+    /*
+     * A renamed note's own links were rewritten when it moved, against the vault as it stood then. A link to a
+     * file that moved LATER in the batch was missed both ways: it no longer resolved from the note's new folder
+     * when the target moved, so it was not in the target's snapshot either. Resolve each still-dangling link from
+     * where the note was before the batch, and follow the target through the batch's renames.
+     */
+    for (const [currentPath, originalPath] of backlinkBatch.getRenamedFiles()) {
+      if (!isNote(currentPath) || !getFileOrNull({ app: this.app, pathOrFile: currentPath })) {
+        continue;
+      }
+      await editReferences({
+        app: this.app,
+        pathOrFile: currentPath,
+        pluginNoticeComponent: this.pluginNoticeComponent,
+        referenceConverter: (reference) => {
+          const { linkPath } = splitSubpath(reference.link);
+          if (!linkPath || this.app.metadataCache.getFirstLinkpathDest(linkPath, currentPath)) {
+            return;
+          }
+          const oldTargetPath = join(dirname(originalPath), linkPath);
+          const newTargetPath = [backlinkBatch.resolve(oldTargetPath), backlinkBatch.resolve(`${oldTargetPath}.md`)]
+            .find((path) => getFileOrNull({ app: this.app, pathOrFile: path }) !== null);
+          if (!newTargetPath) {
+            return;
+          }
+          return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
+            app: this.app,
+            newSourcePathOrFile: currentPath,
+            newTargetPathOrFile: newTargetPath,
+            oldTargetPathOrFile: oldTargetPath,
+            reference,
+            shouldUpdateFileNameAlias: this.settingsManager.getSettings().shouldUpdateFileNameAliases
+          }));
+        },
+        resourceLockComponent: this.resourceLockComponent
+      });
+    }
+  }
+
+  /**
+   * Stops every File Explorer from re-sorting until the returned function is called, which sorts each once.
+   *
+   * @returns The function that restores sorting.
+   */
+  private deferFileExplorerSorting(): () => void {
+    const views = this.app.workspace.getLeavesOfType(FILE_EXPLORER_VIEW_TYPE).map((leaf): unknown => leaf.view).filter(isSortableView);
+    const requestSorts = views.map((view) => view.requestSort);
+    for (const view of views) {
+      // The view's own property shadows the debounced sort; the original is put back below.
+      Object.assign(view, { requestSort: noop });
+    }
+    return (): void => {
+      for (const [index, view] of views.entries()) {
+        Object.assign(view, { requestSort: requestSorts[index] ?? noop });
+        view.requestSort();
+      }
+    };
   }
 
   private handleDelete(file: TAbstractFile): void {
@@ -1759,6 +2144,11 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
   }
 
   private handleRename(file: TAbstractFile, oldPath: string): void {
+    if (this.isMovingMany) {
+      return;
+    }
+    this.backlinkBatch?.recordRename(oldPath, file.path);
+
     if (!isFile(file)) {
       return;
     }
@@ -1825,6 +2215,7 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
         new RenameHandler({
           abortSignal,
           app: this.app,
+          backlinkBatch: this.backlinkBatch,
           handledRenames: this.handledRenames,
           interruptedRenamesMap: this.interruptedRenamesMap,
           linkUpdateProgressReporter: this.linkUpdateProgressReporter,
@@ -1855,6 +2246,40 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
       && !(settings.isNote?.(oldPath) ?? false)
       && !(settings.isNote?.(newPath) ?? false)
       && (settings.emptyFolderBehavior ?? EmptyFolderBehavior.Keep) === EmptyFolderBehavior.Keep;
+  }
+
+  /**
+   * Rewrites one note's links after {@link moveMany}, from the snapshot taken before the moves.
+   *
+   * @param plan - The moves, by old path.
+   * @param oldSourcePath - The path the note had before the moves.
+   * @param linkTargets - Its links, keyed by where they sit, with the path each resolved to before the moves.
+   * @returns A {@link Promise} that resolves once the note is rewritten.
+   */
+  private async rewriteMovedReferences(plan: ReadonlyMap<string, string>, oldSourcePath: string, linkTargets: Map<string, string>): Promise<void> {
+    const shouldUpdateFileNameAlias = this.settingsManager.getSettings().shouldUpdateFileNameAliases;
+    const newSourcePath = plan.get(oldSourcePath) ?? oldSourcePath;
+    await editReferences({
+      app: this.app,
+      pathOrFile: newSourcePath,
+      pluginNoticeComponent: this.pluginNoticeComponent,
+      referenceConverter: (reference) => {
+        const oldTargetPath = linkTargets.get(getReferenceKey(reference));
+        if (oldTargetPath === undefined) {
+          return;
+        }
+        return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
+          app: this.app,
+          newSourcePathOrFile: newSourcePath,
+          newTargetPathOrFile: plan.get(oldTargetPath) ?? oldTargetPath,
+          oldSourcePathOrFile: oldSourcePath,
+          oldTargetPathOrFile: oldTargetPath,
+          reference,
+          shouldUpdateFileNameAlias
+        }));
+      },
+      resourceLockComponent: this.resourceLockComponent
+    });
   }
 }
 
@@ -1961,6 +2386,60 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
 }
 
 /**
+ * Rewrites, in each linking note of `snapshot`, the links that pointed at a renamed file, so they point at its new
+ * path. Used per rename, and once for a whole batch ({@link BacklinkBatch}).
+ *
+ * @param params - The snapshot and how to find each renamed file's new path.
+ */
+async function editRenameBacklinks(params: EditRenameBacklinksParams): Promise<void> {
+  const renamedFilePaths = getObsidianLibState('renamedFilePaths', new Set<string>()).value;
+  const renamedLinks = getObsidianLibState('renamedLinkPaths', new Set<string>()).value;
+  const linkIndexes = new Map<string, number>();
+  await editBacklinksSnapshot(normalizeOptionalProperties<EditBacklinksSnapshotParams<string>>({
+    abortSignal: params.abortSignal,
+    app: params.app,
+    linkUpdateProgressReporter: params.linkUpdateProgressReporter ?? undefined,
+    pluginNoticeComponent: params.pluginNoticeComponent,
+    referenceConverter: ({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }) => {
+      const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
+      linkIndexes.set(newBacklinkPath, linkIndex);
+
+      if (!oldAttachmentPath) {
+        /*
+         * A link that is not in the snapshot was either never ours to rewrite, or was already
+         * rewritten by someone else (leaving it correct). Either way there is nothing to do -
+         * but log it, because a silent skip here is exactly how
+         * https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/60 stayed
+         * invisible: every skipped link left a broken embed and reported nothing.
+         */
+        getLibDebugger('RenameDeleteHandler:updateBacklinks')(
+          `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
+        );
+        return;
+      }
+
+      renamedFilePaths.add(newBacklinkPath);
+      renamedLinks.add(`${newBacklinkPath}//${String(linkIndex)}`);
+
+      return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
+        app: params.app,
+        newSourcePathOrFile: newBacklinkPath,
+        newTargetPathOrFile: params.getNewTargetPath(oldAttachmentPath),
+        oldTargetPathOrFile: oldAttachmentPath,
+        reference,
+        shouldUpdateFileNameAlias: params.shouldUpdateFileNameAliases
+      }));
+    },
+    referenceIdentityKeyProvider: getLinkIdentityKey,
+    resourceLockComponent: params.resourceLockComponent,
+    shouldFailOnMissingFile: false,
+    // The converter logs every link it declines, so it has to be shown the ones the snapshot does not name.
+    shouldVisitUnmatchedReferences: true,
+    snapshot: params.snapshot
+  }));
+}
+
+/**
  * Lists the notes that would still reference a file once everything being deleted alongside it is gone.
  *
  * The same rule {@link deleteIfNotUsed} applies internally, restated here because the pre-pass has to know
@@ -2000,6 +2479,36 @@ function getLinkIdentityKey(link: Reference): string {
     link: link.link,
     original: link.original
   });
+}
+
+const MOVE_MANY_REWRITE_CONCURRENCY = 8;
+const FILE_EXPLORER_VIEW_TYPE = 'file-explorer';
+
+/**
+ * The part of Obsidian's File Explorer view that re-sorts its tree.
+ */
+interface SortableView {
+  readonly requestSort: () => void;
+}
+
+/**
+ * Where a reference sits in its note, which a rename leaves unchanged.
+ *
+ * @param reference - A reference from the note's metadata cache.
+ * @returns The body offset of a link or embed, or the frontmatter key of a property link.
+ */
+function getReferenceKey(reference: Reference): string {
+  return 'key' in reference ? `frontmatter:${(reference as FrontmatterLinkCache).key}` : `body:${String((reference as ReferenceCache).position.start.offset)}`;
+}
+
+/**
+ * Tells whether a view can re-sort its tree on request, as the File Explorer does.
+ *
+ * @param view - Any view.
+ * @returns Whether it has `requestSort`.
+ */
+function isSortableView(view: unknown): view is SortableView {
+  return typeof (view as Partial<SortableView>).requestSort === 'function';
 }
 
 /**
@@ -2130,6 +2639,22 @@ async function rescueStillUsedUnitFolders(params: RescueStillUsedUnitFoldersPara
        */
       printError(new Error(`Failed to rescue the attachment unit folder ${unitFolderMove.oldFolderPath} to ${unitFolderMove.newFolderPath}`, { cause: error }));
     }
+  }
+}
+
+/**
+ * Puts back a property swapped out for a moment: the own property it had, or none, so a method inherited from the
+ * prototype is inherited again.
+ *
+ * @param $object - The object the property was swapped on.
+ * @param key - The property's key.
+ * @param descriptor - Its own property descriptor before the swap, `undefined` when it had none.
+ */
+function restoreProperty($object: object, key: string, descriptor: PropertyDescriptor | undefined): void {
+  if (descriptor) {
+    Object.defineProperty($object, key, descriptor);
+  } else {
+    Reflect.deleteProperty($object, key);
   }
 }
 
