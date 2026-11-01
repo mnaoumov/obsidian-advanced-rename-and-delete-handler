@@ -187,6 +187,40 @@ export class PluginSettingsTab extends PluginSettingsTabBase<PluginSettings> {
                 });
               });
             }
+          }),
+          this.settingEx({
+            desc: createFragment((f) => {
+              f.appendText('Whether a rename or move also rewrites the HTML paths it broke, such as ');
+              appendCodeBlock(f, '<img src="assets/photo.png">');
+              f.appendText('. Obsidian finds the file behind such a path but never updates it.');
+              f.createEl('br');
+              f.appendText('Works whether or not this plugin handles renames. The first rename after turning it on reads every note once.');
+            }),
+            name: 'Should update HTML links',
+            render: (setting) => {
+              setting.addToggle((toggle) => {
+                this.bind({
+                  propertyName: 'shouldUpdateHtmlLinks',
+                  valueComponent: toggle
+                });
+              });
+            }
+          }),
+          this.settingEx({
+            desc: createFragment((f) => {
+              f.appendText('Whether a rename or move that leaves its old path in the settings of Obsidian or another plugin, such as a templates folder, ends with a notice naming each setting.');
+              f.createEl('br');
+              f.appendText('Nothing is changed for you: a plugin keeps its settings in memory and would overwrite a fix made under it.');
+            }),
+            name: 'Should warn about paths in settings',
+            render: (setting) => {
+              setting.addToggle((toggle) => {
+                this.bind({
+                  propertyName: 'shouldWarnAboutPathsInSettings',
+                  valueComponent: toggle
+                });
+              });
+            }
           })
         ]
       }),

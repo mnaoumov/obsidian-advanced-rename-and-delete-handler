@@ -43,6 +43,7 @@ A copy of the vault ships with every release. You can access it via any of the f
 - **Nothing, until you turn it on**, and a fresh install says so once. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
 - **Links follow a renamed or moved note**, display text included, unless somebody gave the link their own words. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
 - **Attachments travel with the note that owns them**, folder and all. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
+- **Paths Obsidian never updates are looked after too**: HTML `src` and `href` paths are rewritten, and a path left in another plugin's settings is named in a notice. [01 Renaming a note](<./demo-vault/01 Renaming a note.md>)
 - **Deleting a note can clean up after it**: its own attachments and the folders left empty, plus a **Delete empty folders** command. [02 Deleting a note](<./demo-vault/02 Deleting a note.md>)
 - **An attachment two notes share is never deleted with one of them**, and can move to the note that still uses it. [03 Shared attachments](<./demo-vault/03 Shared attachments.md>)
 - **An `Excalidraw` drawing counts as an attachment, not a note**, as does any ending or `property:` match you add. [04 What counts as a note](<./demo-vault/04 What counts as a note.md>)

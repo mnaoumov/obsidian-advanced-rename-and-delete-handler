@@ -50,6 +50,9 @@ const REPORTED_DATA = {
   // Added in issue #8, after the report.
   shouldShowLinkUpdateNotice: true,
   shouldUpdateFileNameAliases: true,
+  // Added after the report.
+  shouldUpdateHtmlLinks: false,
+  shouldWarnAboutPathsInSettings: false,
   treatAsAttachmentExtensions: ['.excalidraw.md']
 };
 

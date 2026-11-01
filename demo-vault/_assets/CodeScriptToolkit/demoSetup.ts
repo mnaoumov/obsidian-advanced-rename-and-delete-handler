@@ -17,6 +17,12 @@ const ARCHIVE_TARGET_PATH = 'Archive/Target note.md';
 
 const ILLUSTRATED_PATH = 'Notes/Illustrated note.md';
 const SHARED_PATH = 'Notes/Shares the picture.md';
+const FRAMED_PATH = 'Notes/Framed picture.md';
+const PICTURE_PATH = 'Notes/_attachments/picture.png';
+const RENAMED_PICTURE_PATH = 'Notes/_attachments/picture renamed.png';
+
+// The plugin rewrites HTML paths once renames have stopped for a second; this leaves room for that.
+const HTML_REWRITE_WAIT_IN_MILLISECONDS = 1500;
 
 // Deepest last, so each folder's parent already exists when it is created.
 const EMPTY_FOLDER_PATHS = ['Leftovers', 'Leftovers/Deeper'];
@@ -35,6 +41,8 @@ interface DemoSettingsPatch {
   shouldRescueSharedAttachments?: boolean;
   shouldShowLinkUpdateNotice?: boolean;
   shouldUpdateFileNameAliases?: boolean;
+  shouldUpdateHtmlLinks?: boolean;
+  shouldWarnAboutPathsInSettings?: boolean;
   treatAsAttachmentExtensions?: string[];
 }
 
@@ -157,7 +165,8 @@ export function printVaultTree(app: App): string {
 export async function restoreVault(app: App): Promise<void> {
   const restorations: [from: string, to: string][] = [
     [RENAMED_TARGET_PATH, TARGET_PATH],
-    [ARCHIVE_TARGET_PATH, TARGET_PATH]
+    [ARCHIVE_TARGET_PATH, TARGET_PATH],
+    [RENAMED_PICTURE_PATH, PICTURE_PATH]
   ];
 
   for (const [from, to] of restorations) {
@@ -168,6 +177,7 @@ export async function restoreVault(app: App): Promise<void> {
   }
 
   new Notice('Restored what could be moved back. A deleted note has to come back from your trash.');
+  await sleep(HTML_REWRITE_WAIT_IN_MILLISECONDS);
 }
 
 /**
@@ -203,6 +213,39 @@ export async function readSharingNote(app: App): Promise<string> {
   return await app.vault.read(note);
 }
 
+/**
+ * Reads the note that frames the picture through an HTML tag, so you can see whether its path followed the picture.
+ *
+ * @param app - The Obsidian app.
+ * @returns The note's content.
+ */
+export async function readFramedNote(app: App): Promise<string> {
+  const note = app.vault.getFileByPath(FRAMED_PATH);
+  if (!note) {
+    return 'The framed note is missing.';
+  }
+
+  return await app.vault.read(note);
+}
+
+/**
+ * Renames the picture, then waits for the HTML paths to be rewritten.
+ *
+ * Manual equivalent: rename `Notes/_attachments/picture.png` in the File Explorer.
+ *
+ * @param app - The Obsidian app.
+ */
+export async function renamePicture(app: App): Promise<void> {
+  const picture = app.vault.getFileByPath(PICTURE_PATH);
+  if (!picture) {
+    new Notice('Already renamed — press the restore button to put it back.');
+    return;
+  }
+
+  await app.fileManager.renameFile(picture, RENAMED_PICTURE_PATH);
+  await sleep(HTML_REWRITE_WAIT_IN_MILLISECONDS);
+  new Notice('Renamed. Read the framed note below.');
+}
 function appendFolder(folder: TFolder, indent: string, lines: string[]): void {
   for (const child of sortedChildren(folder)) {
     lines.push(`${indent}${child.name}${child instanceof TFolder ? '/' : ''}`);
@@ -210,6 +253,12 @@ function appendFolder(folder: TFolder, indent: string, lines: string[]): void {
       appendFolder(child, `${indent}  `, lines);
     }
   }
+}
+
+async function sleep(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
 }
 
 function sortedChildren(folder: TFolder): TAbstractFile[] {

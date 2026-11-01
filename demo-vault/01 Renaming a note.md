@@ -108,6 +108,49 @@ Manual equivalent: drag `Notes/Target note.md` onto the `Archive` folder, and dr
 - `shouldRenameAttachmentFiles`
   - whether the attachment **files** are renamed too, so their names keep matching the note. Off by default: renaming a file the user named themselves is a bigger surprise than leaving it alone.
 
+## Paths Obsidian does not update
+
+Obsidian updates wikilinks and markdown links on a rename, and nothing else. Two kinds of path are left behind, and this plugin can look after both. Neither depends on `shouldHandleRenames`: they work whoever updates the links.
+
+[Framed picture](<./Notes/Framed picture.md>) shows the picture through `<img src="./_attachments/picture.png" width="120">`, which Obsidian renders but never rewrites. Turn the rewrite on, rename the picture, and read the note:
+
+```code-button
+---
+caption: Turn on HTML link updates (off by default)
+---
+await require('/demoSetup.ts').changeSettings(app, { shouldUpdateHtmlLinks: true });
+```
+
+```code-button
+---
+caption: Rename the picture
+---
+await require('/demoSetup.ts').renamePicture(app);
+console.log(await require('/demoSetup.ts').readFramedNote(app));
+```
+
+```code-button
+---
+caption: Rename the picture back
+---
+await require('/demoSetup.ts').restoreVault(app);
+console.log(await require('/demoSetup.ts').readFramedNote(app));
+```
+
+```code-button
+---
+caption: Turn HTML link updates off again (the default)
+---
+await require('/demoSetup.ts').changeSettings(app, { shouldUpdateHtmlLinks: false });
+```
+
+Manual equivalent: turn on **Should update HTML links**, rename `Notes/_attachments/picture.png` in the File Explorer, and rename it back afterwards.
+
+- `shouldUpdateHtmlLinks`
+  - whether a rename rewrites the `src` and `href` paths in HTML tags that it broke. A path keeps its style: `./` stays relative to the note, a path from the vault root stays one, and a bare name stays the shortest name that finds the file. Paths in code and comments are left alone. Off by default, and the first rename after turning it on reads every note once.
+- `shouldWarnAboutPathsInSettings`
+  - whether a rename that leaves its old path in the settings of Obsidian or another plugin, such as a templates folder or a folder another plugin watches, ends with a notice naming each of those settings. It only warns: a plugin keeps its settings in memory and would overwrite a fix made under it, so you change the setting there yourself. Off by default.
+
 ## Where this leaves Obsidian's own behavior
 
 With `shouldHandleRenames` on, this plugin replaces Obsidian's link update rather than running beside it. That is why only one plugin in a vault may own rename handling, and why this one does nothing at all while another plugin that also owns it is enabled at a version that still handles renames itself. It stays enabled and tells you in its settings tab which plugin it is waiting for; update that one and this plugin resumes on its own, with no restart.
