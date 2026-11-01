@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 3.4.0
+
+- fix(api): find moveMany's affected notes through the backlink index
+- feat(empty-folders): opt into the rmdir guard
+- feat(api): publish moveMany and runInBatch
+- feat(rename): rewrite broken HTML paths and warn about paths left in settings
+
 ## 3.3.0
 
 - perf(rename): narrow rename link snapshots and move many files at once
