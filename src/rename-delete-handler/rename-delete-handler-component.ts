@@ -34,6 +34,7 @@ import {
   hasOwnAttachmentFolder
 } from '@mnaoumov/obsidian-lib/attachment-path';
 import { rebasePathOntoFolder } from '@mnaoumov/obsidian-lib/attachment-unit-folder';
+import { iterateReferencesAffectedByRename } from '@mnaoumov/obsidian-lib/backlink-index';
 import { getCanvasReferences } from '@mnaoumov/obsidian-lib/canvas';
 import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import { MonkeyAroundComponent } from '@mnaoumov/obsidian-lib/components/monkey-around-component';
@@ -280,6 +281,11 @@ interface MoveUnitFolderParams {
   readonly app: App;
   readonly attachmentPath: string;
   readonly unitFolderMove: UnitFolderMove;
+}
+
+interface PendingRename {
+  readonly file: TFile;
+  readonly newPath: string;
 }
 
 interface RenameDeleteHandlerComponentConstructorParams {
@@ -745,9 +751,19 @@ class DeleteProtectionPatchComponent extends MonkeyAroundComponent {
 }
 
 class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent {
+  /**
+   * The rename whose `runAsyncLinkUpdate` snapshot is about to be taken: set when Obsidian's `onCleanCache`
+   * callback for that snapshot fires, consumed by the very next `iterateAllRefs` call, which is the snapshot.
+   */
+  private activeSnapshotRename: null | PendingRename = null;
   private readonly app: App;
   private readonly fileManager: FileManager;
   private isForcingAlwaysUpdateLinks = false;
+  /**
+   * The rename `fileManager.renameFile` is performing, recorded for the `runAsyncLinkUpdate` call it makes
+   * synchronously, which is the only one that cannot otherwise tell what is being renamed.
+   */
+  private pendingRename: null | PendingRename = null;
   private readonly settingsManager: SettingsManager;
   /**
    * The canvas link updates {@link wrapLinkUpdatesHandler} took out of a `linkUpdates` array, keyed by that array,
@@ -771,7 +787,51 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
         originalMethodBound
       }) => {
         const newHandler: LinkUpdatesHandler = (linkUpdates) => this.wrapLinkUpdatesHandler(linkUpdates, linkUpdatesHandler);
-        return originalMethodBound(newHandler);
+        const rename = this.pendingRename;
+        this.pendingRename = null;
+        // With `inProgressUpdates` set, Obsidian queues the handler onto the running update and takes no snapshot.
+        return !rename || this.fileManager.inProgressUpdates
+          ? originalMethodBound(newHandler)
+          : this.withNarrowedSnapshot(rename, () => originalMethodBound(newHandler));
+      }
+    });
+
+    this.registerMethodPatch({
+      $object: this.fileManager,
+      methodName: 'renameFile',
+      patchHandler: ({
+        originalArguments: [file, newPath],
+        originalMethodBound
+      }) => {
+        if (!isFile(file)) {
+          return originalMethodBound(file, newPath);
+        }
+
+        // `renameFile` calls `runAsyncLinkUpdate` synchronously, which picks this up and clears it.
+        this.pendingRename = { file, newPath };
+        try {
+          return originalMethodBound(file, newPath);
+        } finally {
+          this.pendingRename = null;
+        }
+      }
+    });
+
+    this.registerMethodPatch({
+      $object: this.app.metadataCache,
+      methodName: 'iterateAllRefs',
+      patchHandler: ({
+        originalArguments: [callback],
+        originalMethodBound
+      }) => {
+        const rename = this.activeSnapshotRename;
+        if (!rename) {
+          originalMethodBound(callback);
+          return;
+        }
+
+        this.activeSnapshotRename = null;
+        iterateReferencesAffectedByRename(this.app, rename.file, rename.newPath, callback);
       }
     });
 
@@ -835,6 +895,54 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
   }
 
   /**
+   * Runs `runAsyncLinkUpdate` so that its snapshot of resolved references covers only the references the rename
+   * can affect (`iterateReferencesAffectedByRename`) instead of every reference in the vault.
+   *
+   * Obsidian's `runAsyncLinkUpdate` queues a task on `fileManager.updateQueue`. The task waits for
+   * `metadataCache.onCleanCache`, then calls `metadataCache.iterateAllRefs` once to take the snapshot, then runs the
+   * handler that renames. The queued task is wrapped so that the `onCleanCache` callback it registers, and only
+   * that one, arms the narrowing, which the `iterateAllRefs` patch consumes on the next call. Both temporary swaps
+   * are undone synchronously, before anything else can call either method.
+   *
+   * @param rename - The rename being performed.
+   * @param callOriginal - Calls Obsidian's `runAsyncLinkUpdate`.
+   * @returns What `runAsyncLinkUpdate` returns.
+   */
+  private withNarrowedSnapshot(rename: PendingRename, callOriginal: () => Promise<void>): Promise<void> {
+    const updateQueue = this.fileManager.updateQueue;
+    const metadataCache = this.app.metadataCache;
+    const originalQueue = Object.getOwnPropertyDescriptor(updateQueue, 'queue');
+    const queue = updateQueue.queue.bind(updateQueue);
+
+    updateQueue.queue = <T>(task: () => Promise<T> | T): Promise<T> =>
+      queue(() => {
+        const originalOnCleanCache = Object.getOwnPropertyDescriptor(metadataCache, 'onCleanCache');
+        const onCleanCache = metadataCache.onCleanCache.bind(metadataCache);
+        metadataCache.onCleanCache = (onCleanCacheCallback: () => void): void => {
+          onCleanCache(() => {
+            this.activeSnapshotRename = rename;
+            onCleanCacheCallback();
+          });
+        };
+        let result: Promise<T> | T;
+        try {
+          result = task();
+        } finally {
+          restoreProperty(metadataCache, 'onCleanCache', originalOnCleanCache);
+        }
+        return Promise.resolve(result).finally(() => {
+          this.activeSnapshotRename = null;
+        });
+      });
+
+    try {
+      return callOriginal();
+    } finally {
+      restoreProperty(updateQueue, 'queue', originalQueue);
+    }
+  }
+
+  /**
    * Suppresses Obsidian's own link update for the renames this handler has already rewritten, by emptying the
    * `linkUpdates` array that the native {@link FileManager.runAsyncLinkUpdate} collected.
    *
@@ -843,7 +951,8 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    *
    * - `runAsyncLinkUpdate` waits for a clean metadata cache and then walks EVERY reference in the vault
    *   (`metadataCache.iterateAllRefs`, one `getLinkpathDest` per reference) to build `linkUpdates` - before it
-   *   calls this handler. That walk is unconditional and is already paid by the time this method is entered, so
+   *   calls this handler. For a `renameFile` of a file, {@link withNarrowedSnapshot} narrows that walk to the
+   *   references the rename can affect; by the time this method is entered it has been paid either way, so
    *   nothing decided below can avoid it.
    * - `updateAllLinks(linkUpdates)`, which runs after this handler and is the only thing emptying the array
    *   skips, is linear in `linkUpdates.length`: one per-entry change computation, then a write for only the
@@ -864,15 +973,11 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * re-points the entries whose `resolvedFile` is the note it has just trashed. Collected that late, a link to
    * a renamed or trashed file no longer resolves, its entry is never made, and the link is left dangling.
    *
-   * Narrowing the walk to the renamed subtree instead (reimplementing `runAsyncLinkUpdate`) was measured and
-   * refused (2026-09-24, Obsidian 1.14.2): the walk costs ~115 ms at 100k references and ~320 ms at 250k, and
-   * runs ONCE per `renameFile`, folder renames included - ~30% of a single note rename with this handler off,
-   * 2% of a 20-file folder rename with it on, 0.03% of a 1000-file one. Those last two shares were measured
-   * while this handler still made two backlink lookups per renamed file through Obsidian's `getBacklinksForFile`,
-   * which is the same full `iterateAllRefs` walk, so a folder rename walked the vault 2F+1 times. The lookups now
-   * go through `@mnaoumov/obsidian-lib`'s backlink helpers, whose index resolves only the references of the notes
-   * that could hold a backlink, so this walk is the only one left in a rename and its share of one has grown
-   * accordingly. It is still one walk per `renameFile`.
+   * Narrowing that walk was first measured and refused (2026-09-24, Obsidian 1.14.2): it cost ~115 ms at 100k
+   * references and ~320 ms at 250k, once per `renameFile`. A real 34k-file vault on Obsidian 1.15.0 (2026-10-31)
+   * paid 5 s for a note and 38 s for a note with ten attachments, since every attachment this handler moves is
+   * another `renameFile` and so another full walk, so the walk is now narrowed. It still runs in full, once, for
+   * a folder `renameFile` and for every other caller of `runAsyncLinkUpdate`.
    *
    * @param linkUpdates - The link updates Obsidian collected before invoking the handler.
    * @param linkUpdatesHandler - The original handler passed to {@link FileManager.runAsyncLinkUpdate}.
@@ -2130,6 +2235,22 @@ async function rescueStillUsedUnitFolders(params: RescueStillUsedUnitFoldersPara
        */
       printError(new Error(`Failed to rescue the attachment unit folder ${unitFolderMove.oldFolderPath} to ${unitFolderMove.newFolderPath}`, { cause: error }));
     }
+  }
+}
+
+/**
+ * Puts back a property swapped out for a moment: the own property it had, or none, so a method inherited from the
+ * prototype is inherited again.
+ *
+ * @param $object - The object the property was swapped on.
+ * @param key - The property's key.
+ * @param descriptor - Its own property descriptor before the swap, `undefined` when it had none.
+ */
+function restoreProperty($object: object, key: string, descriptor: PropertyDescriptor | undefined): void {
+  if (descriptor) {
+    Object.defineProperty($object, key, descriptor);
+  } else {
+    Reflect.deleteProperty($object, key);
   }
 }
 
