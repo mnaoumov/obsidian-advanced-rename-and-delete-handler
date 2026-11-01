@@ -8,7 +8,9 @@
  * The API is reached through the `@mnaoumov/obsidian-lib` cross-plugin API registry, keyed by the plugin id
  * `advanced-rename-and-delete-handler` and version-negotiated against its CONTRACT version, which moves independently of
  * the plugin's own `manifest.version`. `1.1.0` added the three read-back members to `1.0.0`'s `migrateSettings`, and
- * `1.2.0` added {@link HandedOverSettings.shouldDeleteEmptyNoteFolders}, both purely additively, so ask for `^1`. The README's `For plugin developers` section shows both routes: `watchPluginApi` for a
+ * `1.2.0` added {@link HandedOverSettings.shouldDeleteEmptyNoteFolders}, and `1.3.0` added
+ * {@link AdvancedRenameAndDeleteHandlerApi.moveMany} and {@link AdvancedRenameAndDeleteHandlerApi.runInBatch}, all purely
+ * additively, so ask for `^1` — or `^1.3.0` when you call one of the two bulk-move members. The README's `For plugin developers` section shows both routes: `watchPluginApi` for a
  * consumer that already has `@mnaoumov/obsidian-lib`, and the library-free registry read for one that does not.
  */
 
@@ -77,6 +79,80 @@ export interface AdvancedRenameAndDeleteHandlerApi {
    * @returns What the user approved.
    */
   migrateSettings: (params: MigrateSettingsParams) => Promise<MigrateSettingsResult>;
+
+  /**
+   * Moves many files at once and keeps every link pointing where it pointed, rewriting each affected note ONCE.
+   *
+   * Every link a move affects is resolved first, while the vault is still as it was: each moved note's own links
+   * and every link to a moved file. Then all the files move with no link update in between, the folders the moves
+   * left empty are handled per {@link HandedOverSettings.emptyFolderBehavior}, and each affected note is rewritten
+   * once against the final layout. So the result does not depend on the order of the moves, and two moved notes
+   * that link each other both end up right.
+   *
+   * It moves exactly the files in {@link MoveManyParams.moves} and nothing else: attachments do NOT follow their
+   * note the way they do on a single rename, so list them too. That is deliberate. A caller that plans a bulk move
+   * already knows where every file should go, and an implicit attachment move per note would put back the
+   * per-file work this member exists to skip. It acts whatever {@link HandedOverSettings.shouldHandleRenames} and
+   * the include and exclude lists say, because the caller asked for it explicitly. Links held in canvas files are
+   * not followed.
+   *
+   * Resolves once every file is moved and every affected note is rewritten, so the links are final when it does.
+   * Rejects before moving anything when a source does not exist, a target already exists, or two moves share a
+   * source or a target. Only one bulk operation runs at a time: it rejects while another `moveMany` or
+   * {@link AdvancedRenameAndDeleteHandlerApi.runInBatch} is running. Added in contract `1.3.0`.
+   *
+   * @param params - The moves.
+   * @returns A promise that resolves once the links are final.
+   */
+  moveMany: (params: MoveManyParams) => Promise<void>;
+
+  /**
+   * Runs `operation`, which renames many files through `app.fileManager.renameFile`, and rewrites each note that
+   * links to them once, after all of them, instead of once per renamed file.
+   *
+   * Each rename is still handled as it happens: the file moves, its attachments follow it per the settings, and
+   * the renamed note's own links are rewritten. Only the rewrites of OTHER notes' links are held back, and each
+   * such note is written once at the end, with paths followed through every rename the batch made. Use it when
+   * the renames should behave exactly like the user's own, attachments included, and
+   * {@link AdvancedRenameAndDeleteHandlerApi.moveMany} when the caller has the whole plan and wants it fast.
+   *
+   * With {@link HandedOverSettings.shouldHandleRenames} off, this plugin handles no rename, so nothing is held
+   * back and Obsidian updates the links itself as usual.
+   *
+   * Resolves once `operation` has resolved and every held-back link is rewritten, so the links are final when it
+   * does; rejects with `operation`'s own error when it throws. A rename inside `operation` must not reuse a path
+   * that another rename in it freed. Only one bulk operation runs at a time: it rejects while another
+   * `runInBatch` or {@link AdvancedRenameAndDeleteHandlerApi.moveMany} is running. Added in contract `1.3.0`.
+   *
+   * @param operation - Performs the renames.
+   * @returns A promise that resolves once the links are final.
+   */
+  runInBatch: (operation: () => Promise<void>) => Promise<void>;
+}
+
+/**
+ * One file for {@link AdvancedRenameAndDeleteHandlerApi.moveMany} to move.
+ */
+export interface FileMove {
+  /**
+   * Where to move it, from the vault root. Must not exist yet; a missing parent folder is created.
+   */
+  readonly newPath: string;
+
+  /**
+   * The file to move, by its current path from the vault root.
+   */
+  readonly oldPath: string;
+}
+
+/**
+ * Parameters for {@link AdvancedRenameAndDeleteHandlerApi.moveMany}.
+ */
+export interface MoveManyParams {
+  /**
+   * The files to move. Each source and each target may appear only once.
+   */
+  readonly moves: readonly FileMove[];
 }
 
 /**

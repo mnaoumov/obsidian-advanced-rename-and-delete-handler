@@ -14,12 +14,14 @@ import {
   noopAsync
 } from '@mnaoumov/typescript-lib/function';
 
+import type { RenameDeleteHandlerComponent } from '../rename-delete-handler/rename-delete-handler-component.ts';
 import type { PluginSettingsComponent } from '../settings/plugin-settings-component.ts';
 import type {
   AdvancedRenameAndDeleteHandlerApi,
   HandedOverSettings,
   MigrateSettingsParams,
-  MigrateSettingsResult
+  MigrateSettingsResult,
+  MoveManyParams
 } from './plugin-api.ts';
 
 import { showSettingsMigrationModal } from './settings-migration-modal.ts';
@@ -41,6 +43,11 @@ export interface PluginApiImplConstructorParams {
    * The component owning this plugin's settings.
    */
   readonly pluginSettingsComponent: PluginSettingsComponent;
+
+  /**
+   * The component that handles renames and deletes, which carries out the bulk moves.
+   */
+  readonly renameDeleteHandlerComponent: Pick<RenameDeleteHandlerComponent, 'moveMany' | 'runInBatch'>;
 }
 
 /**
@@ -48,17 +55,26 @@ export interface PluginApiImplConstructorParams {
  */
 export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
   private readonly app: App;
-  private readonly pluginSettingsComponent: PluginSettingsComponent;
 
+  /**
+   * Set while {@link moveMany} or {@link runInBatch} runs, from the call to the last rewrite. The component guards
+   * only the stretches it has state for, and {@link moveMany}'s snapshot and rewrite are outside them.
+   */
+  private isBulkOperationRunning = false;
+
+  private readonly pluginSettingsComponent: PluginSettingsComponent;
   /**
    * The tail of the dialog queue. Two consumers loading at once would otherwise stack two modals on top of
    * each other, and the second would compare against settings the first is about to change.
    */
   private queuedMigrations = noopAsync();
 
+  private readonly renameDeleteHandlerComponent: Pick<RenameDeleteHandlerComponent, 'moveMany' | 'runInBatch'>;
+
   public constructor(params: PluginApiImplConstructorParams) {
     this.app = params.app;
     this.pluginSettingsComponent = params.pluginSettingsComponent;
+    this.renameDeleteHandlerComponent = params.renameDeleteHandlerComponent;
   }
 
   /**
@@ -135,6 +151,45 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
     }
   }
 
+  /**
+   * Moves many files at once and rewrites each affected note once.
+   *
+   * @param moveManyParams - The moves.
+   * @returns A {@link Promise} that resolves once the links are final.
+   */
+  // eslint-disable-next-line typescript-dev-toolkit/params-options-name-match -- The type is the published contract's, as for migrateSettings.
+  public async moveMany(moveManyParams: MoveManyParams): Promise<void> {
+    const plan = new Map<string, string>();
+    const newPaths = new Set<string>();
+    for (const { newPath, oldPath } of moveManyParams.moves) {
+      // A `Map` would keep the last of two moves of one file without a word, and two moves to one path fail halfway.
+      if (plan.has(oldPath)) {
+        throw new Error(`Cannot move ${oldPath} twice.`);
+      }
+      if (newPaths.has(newPath)) {
+        throw new Error(`Cannot move two files to ${newPath}.`);
+      }
+      plan.set(oldPath, newPath);
+      newPaths.add(newPath);
+    }
+
+    await this.runBulkOperation(async () => {
+      await this.renameDeleteHandlerComponent.moveMany(plan);
+    });
+  }
+
+  /**
+   * Runs `operation`, which renames many files, and rewrites each note that links to them once, after all of them.
+   *
+   * @param operation - Performs the renames.
+   * @returns A {@link Promise} that resolves once the links are final.
+   */
+  public async runInBatch(operation: () => Promise<void>): Promise<void> {
+    await this.runBulkOperation(async () => {
+      await this.renameDeleteHandlerComponent.runInBatch(operation);
+    });
+  }
+
   private getSourcePluginName(sourcePluginId: string): string {
     return this.app.plugins.manifests[sourcePluginId]?.name ?? sourcePluginId;
   }
@@ -169,5 +224,18 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
     });
 
     return { isApplied: true };
+  }
+
+  private async runBulkOperation(operation: () => Promise<void>): Promise<void> {
+    if (this.isBulkOperationRunning) {
+      throw new Error('A bulk move is already running.');
+    }
+
+    this.isBulkOperationRunning = true;
+    try {
+      await operation();
+    } finally {
+      this.isBulkOperationRunning = false;
+    }
   }
 }
