@@ -6,6 +6,7 @@ import type { PluginApiDeclaration } from '@mnaoumov/obsidian-lib/plugin/plugin-
 
 import { OpenBugReportCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-bug-report-command-handler';
 import { OpenDemoVaultCommandHandler } from '@mnaoumov/obsidian-lib/command-handlers/open-demo-vault-command-handler';
+import { CaseInsensitiveFileIndexComponent } from '@mnaoumov/obsidian-lib/components/case-insensitive-file-index-component';
 import { PluginConflictSeverity } from '@mnaoumov/obsidian-lib/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from '@mnaoumov/obsidian-lib/components/plugin-settings-tab-component';
 import { PluginDataHandler } from '@mnaoumov/obsidian-lib/data-handler';
@@ -173,6 +174,9 @@ export class Plugin extends PluginBase {
       })
     );
     this.pluginSettingsComponent = pluginSettingsComponent;
+
+    // A rename resolves link paths case-insensitively, and without this index each miss scans every file in the vault.
+    this.addChild(new CaseInsensitiveFileIndexComponent(this.app));
 
     this.addChild(
       new FirstLoadNoticeComponent({
