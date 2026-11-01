@@ -17,6 +17,8 @@
     "Behaviour",
     "commitlint",
     "contenteditable",
+    "EISDIR",
+    "ENOTEMPTY",
     "Excalidraw",
     "frontmatter",
     "GHSA",
