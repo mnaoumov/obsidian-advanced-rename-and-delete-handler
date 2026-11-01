@@ -21,6 +21,7 @@ import {
   CONSISTENT_ATTACHMENTS_AND_LINKS_PLUGIN_NAME
 } from './coexistence/consistent-attachments-and-links.ts';
 import { DeleteEmptyFoldersCommandHandler } from './empty-folders/delete-empty-folders-command-handler.ts';
+import { HtmlLinkUpdater } from './html-links/html-link-updater.ts';
 import { PluginApiImpl } from './plugin-api/plugin-api-impl.ts';
 import {
   PLUGIN_API_CONTRACT,
@@ -28,7 +29,9 @@ import {
 } from './plugin-api/plugin-api.ts';
 import { PluginDependentsComponent } from './plugin-api/plugin-dependents-component.ts';
 import { RenameDeleteHandlerComponent } from './rename-delete-handler/rename-delete-handler-component.ts';
+import { RenameBatchComponent } from './rename/rename-batch-component.ts';
 import { RescuePathResolver } from './rescue/rescue-path-resolver.ts';
+import { SettingsPathWarner } from './settings-paths/settings-path-warner.ts';
 import { FirstLoadNoticeComponent } from './settings/first-load-notice-component.ts';
 import { PluginSettingsComponent as PluginSettingsComponentImpl } from './settings/plugin-settings-component.ts';
 import { PluginSettingsTab } from './settings/plugin-settings-tab.ts';
@@ -242,6 +245,24 @@ export class Plugin extends PluginBase {
             shouldUpdateFileNameAliases: settings.shouldUpdateFileNameAliases
           };
         }
+      })
+    );
+
+    const htmlLinkUpdater = new HtmlLinkUpdater({
+      app: this.app,
+      pluginNoticeComponent: this.pluginNoticeComponent,
+      pluginSettingsComponent
+    });
+    const settingsPathWarner = new SettingsPathWarner({
+      app: this.app,
+      pluginNoticeComponent: this.pluginNoticeComponent,
+      pluginSettingsComponent
+    });
+    this.addChild(
+      new RenameBatchComponent({
+        app: this.app,
+        // The HTML rewrite first, so the settings scan reads the vault after it.
+        handlers: [htmlLinkUpdater.handleRenames.bind(htmlLinkUpdater), settingsPathWarner.handleRenames.bind(settingsPathWarner)]
       })
     );
 

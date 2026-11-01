@@ -110,6 +110,24 @@ export class PluginSettings {
   public shouldUpdateFileNameAliases = true;
 
   /**
+   * Whether a rename rewrites the HTML `src` and `href` paths it broke, such as `<img src="assets/x.png">`.
+   *
+   * Obsidian resolves such a path like a link but never updates it. Off by default like every behavior here, and
+   * because the first rename after it is turned on reads every note once. Not in the published API, since no
+   * consumer ever owned it.
+   */
+  public shouldUpdateHtmlLinks = false;
+
+  /**
+   * Whether a rename that leaves its old path in the settings of Obsidian or another plugin ends with a notice naming
+   * each one, such as a templates folder that moved.
+   *
+   * Warns only: a plugin's settings are its own, and it overwrites a file rewritten under it. Not in the published
+   * API, since no consumer ever owned it.
+   */
+  public shouldWarnAboutPathsInSettings = false;
+
+  /**
    * Entries that make a file an attachment even though its extension says otherwise — the canonical
    * case being an `Excalidraw` drawing, which is stored as markdown. An entry is an extension such as
    * `.excalidraw.md`, or a `property:name` / `property:name=value` frontmatter match: `Excalidraw` itself

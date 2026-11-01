@@ -41,6 +41,13 @@ describe('PluginSettings', () => {
       expect(new PluginSettings().treatAsAttachmentExtensions).toEqual(['.excalidraw.md', 'property:excalidraw-plugin']);
     });
 
+    it('should leave HTML paths and paths in other settings alone', () => {
+      const settings = new PluginSettings();
+
+      expect(settings.shouldUpdateHtmlLinks).toBe(false);
+      expect(settings.shouldWarnAboutPathsInSettings).toBe(false);
+    });
+
     it('should have an empty note priority list', () => {
       expect(new PluginSettings().notePriorities).toEqual([]);
     });
