@@ -1924,10 +1924,19 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
 
     // For each affected note: each of its links to a file, keyed by where the link sits, with the file it resolves to.
     const snapshot = new Map<string, Map<string, string>>();
-    for (const [sourcePath, targetCounts] of Object.entries(this.app.metadataCache.resolvedLinks)) {
-      if (!plan.has(sourcePath) && Object.keys(targetCounts).every((targetPath) => !plan.has(targetPath))) {
-        continue;
+    /*
+     * The affected notes come from the backlink index, not from `metadataCache.resolvedLinks`. Obsidian fills a
+     * note's `resolvedLinks` entry a step after it parses the note, so a note parsed just before the call can be
+     * missing there: on a busy Android emulator a note holding links to two moved files was left out and never
+     * rewritten (2026-11-01). The index reads the parsed cache itself.
+     */
+    const sourcePaths = new Set(plan.keys());
+    for (const oldPath of plan.keys()) {
+      for (const backlinkPath of getBacklinksForFileOrPath(this.app, oldPath).data.keys()) {
+        sourcePaths.add(backlinkPath);
       }
+    }
+    for (const sourcePath of sourcePaths) {
       const cache = this.app.metadataCache.getCache(sourcePath);
       if (!cache) {
         continue;
