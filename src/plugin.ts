@@ -9,6 +9,7 @@ import { OpenDemoVaultCommandHandler } from '@mnaoumov/obsidian-lib/command-hand
 import { CaseInsensitiveFileIndexComponent } from '@mnaoumov/obsidian-lib/components/case-insensitive-file-index-component';
 import { PluginConflictSeverity } from '@mnaoumov/obsidian-lib/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from '@mnaoumov/obsidian-lib/components/plugin-settings-tab-component';
+import { RmdirGuardComponent } from '@mnaoumov/obsidian-lib/components/rmdir-guard-component';
 import { PluginDataHandler } from '@mnaoumov/obsidian-lib/data-handler';
 import { PluginBase } from '@mnaoumov/obsidian-lib/plugin/plugin';
 import { PluginEventSourceImpl } from '@mnaoumov/obsidian-lib/plugin/plugin-event-source';
@@ -180,6 +181,9 @@ export class Plugin extends PluginBase {
 
     // A rename resolves link paths case-insensitively, and without this index each miss scans every file in the vault.
     this.addChild(new CaseInsensitiveFileIndexComponent(this.app));
+
+    // Folder deletion is this plugin's concern, so it opts the shared adapter into a non-recursive `rmdir` that refuses a non-empty folder.
+    this.addChild(new RmdirGuardComponent(this.app));
 
     this.addChild(
       new FirstLoadNoticeComponent({

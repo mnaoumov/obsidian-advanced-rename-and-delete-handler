@@ -10,6 +10,7 @@ import type {
 
 import { PluginConflictSeverity } from '@mnaoumov/obsidian-lib/components/plugin-gate-component';
 import { PluginSettingsTabComponent } from '@mnaoumov/obsidian-lib/components/plugin-settings-tab-component';
+import { RmdirGuardComponent } from '@mnaoumov/obsidian-lib/components/rmdir-guard-component';
 import { ObsidianLibrary } from '@mnaoumov/obsidian-lib/library';
 import { watchPluginApi } from '@mnaoumov/obsidian-lib/plugin/plugin-api';
 import { Library } from '@mnaoumov/typescript-lib/library';
@@ -286,6 +287,17 @@ describe('Plugin', () => {
       const addedChildren = addChildSpy.mock.calls.map((call) => call[0]);
       expect(addedChildren.some((child) => child instanceof FirstLoadNoticeComponent)).toBe(true);
       expect(addedChildren.some((child) => child instanceof PluginDependentsComponent)).toBe(true);
+      plugin.unload();
+    });
+
+    it('should opt into the rmdir guard', async () => {
+      const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
+      const addChildSpy = vi.spyOn(plugin, 'addChild');
+
+      await plugin.onload();
+
+      const addedChildren = addChildSpy.mock.calls.map((call) => call[0]);
+      expect(addedChildren.some((child) => child instanceof RmdirGuardComponent)).toBe(true);
       plugin.unload();
     });
 
