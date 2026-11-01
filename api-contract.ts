@@ -3,7 +3,7 @@
  *
  * The runtime half of this plugin's published API: its CONTRACT, one entry per method of
  * {@link AdvancedRenameAndDeleteHandlerApi}, each with a schema over the argument list and a schema over the
- * value the method returns (awaited, for `migrateSettings`).
+ * value the method returns (awaited, for the methods that return a promise).
  *
  * This plugin publishes exactly this constant with its API, and a consumer copies it beside `api.d.ts` and
  * passes it as the `contract` when it looks the API up, so both ends validate against ONE definition. The
@@ -31,7 +31,8 @@ import {
   createApiContractSchemaBuilders,
   createExpectedTypeGuard,
   defineApiContract,
-  STRING_GUARD
+  STRING_GUARD,
+  UNDEFINED_GUARD
 } from '@mnaoumov/typescript-lib/api-contract';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
 import {
@@ -46,10 +47,12 @@ import {
 import type {
   AdvancedRenameAndDeleteHandlerApi,
   EmptyFolderBehavior,
+  FileMove,
   HandedOverSettings,
   MigratableSettings,
   MigrateSettingsParams,
-  MigrateSettingsResult
+  MigrateSettingsResult,
+  MoveManyParams
 } from './api.d.ts';
 
 /**
@@ -109,6 +112,22 @@ const isMigrateSettingsResult = objectTypeGuard<MigrateSettingsResult>({
   isApplied: isBoolean
 });
 
+const isFileMove = objectTypeGuard<FileMove>({
+  newPath: isString,
+  oldPath: isString
+});
+
+const isMoveManyParams = objectTypeGuard<MoveManyParams>({
+  moves: (value: unknown): value is readonly FileMove[] => Array.isArray(value) && value.every((item) => isFileMove(item))
+});
+
+/**
+ * A function is all the contract can check of a callback: what it does when called is the caller's business.
+ */
+function isBatchOperation(value: unknown): value is () => Promise<void> {
+  return typeof value === 'function';
+}
+
 const PATH_GUARD = { ...STRING_GUARD, expected: 'a path' };
 
 /**
@@ -133,5 +152,13 @@ export const ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT: AdvancedRenameAndD
   migrateSettings: {
     input: createArgumentsSchema([createExpectedTypeGuard('migrate settings params', isMigrateSettingsParams)]),
     output: createTypeGuardSchema(createExpectedTypeGuard('a migrate settings result', isMigrateSettingsResult))
+  },
+  moveMany: {
+    input: createArgumentsSchema([createExpectedTypeGuard('move many params', isMoveManyParams)]),
+    output: createTypeGuardSchema(UNDEFINED_GUARD)
+  },
+  runInBatch: {
+    input: createArgumentsSchema([createExpectedTypeGuard('a function performing the renames', isBatchOperation)]),
+    output: createTypeGuardSchema(UNDEFINED_GUARD)
   }
 });

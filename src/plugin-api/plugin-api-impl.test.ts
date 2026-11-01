@@ -3,7 +3,10 @@ import type {
   PluginManifest
 } from 'obsidian';
 
-import { noop } from '@mnaoumov/typescript-lib/function';
+import {
+  noop,
+  noopAsync
+} from '@mnaoumov/typescript-lib/function';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
 import { strictProxy } from '@mnaoumov/typescript-test-toolkit/strict-proxy';
 import {
@@ -15,6 +18,7 @@ import {
 } from 'vitest';
 
 import type { PluginSettingsComponent } from '../settings/plugin-settings-component.ts';
+import type { PluginApiImplConstructorParams } from './plugin-api-impl.ts';
 import type { ShowSettingsMigrationModalParams } from './settings-migration-modal.ts';
 import type { SettingsMigrationRow } from './settings-migration.ts';
 
@@ -44,10 +48,13 @@ function createApp(manifests: PluginManifests): AppOriginal {
   return castTo<AppOriginal>({ plugins: { manifests } });
 }
 
+let renameDeleteHandlerComponent: PluginApiImplConstructorParams['renameDeleteHandlerComponent'];
+
 function createPluginApi(app: AppOriginal): PluginApiImpl {
   return new PluginApiImpl({
     app,
-    pluginSettingsComponent
+    pluginSettingsComponent,
+    renameDeleteHandlerComponent
   });
 }
 
@@ -62,6 +69,12 @@ beforeEach(() => {
     },
     settings
   });
+  renameDeleteHandlerComponent = {
+    moveMany: vi.fn(noopAsync),
+    runInBatch: vi.fn(async (operation: () => Promise<void>): Promise<void> => {
+      await operation();
+    })
+  };
 });
 
 describe('PluginApiImpl.migrateSettings', () => {
@@ -258,5 +271,65 @@ describe('PluginApiImpl.isTreatedAsAttachment', () => {
     expect(pluginApi.isTreatedAsAttachment('Notes/Drawing.md')).toBe(true);
     expect(pluginApi.isTreatedAsAttachment('Notes/Note.md')).toBe(false);
     expect(isTreatedAsAttachment).toHaveBeenCalledWith('Notes/Drawing.md');
+  });
+});
+
+describe('PluginApiImpl.moveMany', () => {
+  it('hands the moves to the component as one plan', async () => {
+    await createPluginApi(createApp({})).moveMany({
+      moves: [{ newPath: 'b/a.md', oldPath: 'a.md' }, { newPath: 'b/a.png', oldPath: 'a.png' }]
+    });
+    expect(renameDeleteHandlerComponent.moveMany).toHaveBeenCalledWith(new Map([['a.md', 'b/a.md'], ['a.png', 'b/a.png']]));
+  });
+
+  it('refuses a file moved twice, before moving anything', async () => {
+    await expect(
+      createPluginApi(createApp({})).moveMany({
+        moves: [{ newPath: 'b/a.md', oldPath: 'a.md' }, { newPath: 'c/a.md', oldPath: 'a.md' }]
+      })
+    ).rejects.toThrow('Cannot move a.md twice.');
+    expect(renameDeleteHandlerComponent.moveMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses two files moved to one path, before moving anything', async () => {
+    await expect(
+      createPluginApi(createApp({})).moveMany({
+        moves: [{ newPath: 'b/a.md', oldPath: 'a.md' }, { newPath: 'b/a.md', oldPath: 'c/a.md' }]
+      })
+    ).rejects.toThrow('Cannot move two files to b/a.md.');
+    expect(renameDeleteHandlerComponent.moveMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('PluginApiImpl.runInBatch', () => {
+  it('runs the operation inside the component batch', async () => {
+    const operation = vi.fn(noopAsync);
+    await createPluginApi(createApp({})).runInBatch(operation);
+    expect(renameDeleteHandlerComponent.runInBatch).toHaveBeenCalledWith(operation);
+    expect(operation).toHaveBeenCalledOnce();
+  });
+
+  it('passes the operation error on, and takes a new bulk operation afterwards', async () => {
+    const pluginApi = createPluginApi(createApp({}));
+    await expect(pluginApi.runInBatch(async () => {
+      await Promise.reject(new Error('boom'));
+    })).rejects.toThrow('boom');
+    await pluginApi.moveMany({ moves: [] });
+    expect(renameDeleteHandlerComponent.moveMany).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a second bulk operation while one runs', async () => {
+    const pluginApi = createPluginApi(createApp({}));
+    let finishOperation: () => void = noop;
+    const running = pluginApi.runInBatch(async () => {
+      await new Promise<void>((resolve) => {
+        finishOperation = resolve;
+      });
+    });
+    await expect(pluginApi.moveMany({ moves: [] })).rejects.toThrow('A bulk move is already running.');
+    await expect(pluginApi.runInBatch(noopAsync)).rejects.toThrow('A bulk move is already running.');
+    finishOperation();
+    await running;
+    expect(renameDeleteHandlerComponent.moveMany).not.toHaveBeenCalled();
   });
 });

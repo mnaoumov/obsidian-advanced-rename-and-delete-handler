@@ -212,17 +212,12 @@ export class Plugin extends PluginBase {
       })
     );
 
-    this.pluginApi = new PluginApiImpl({
-      app: this.app,
-      pluginSettingsComponent
-    });
-
     const rescuePathResolver = new RescuePathResolver({
       app: this.app,
       pluginSettingsComponent
     });
 
-    this.addChild(
+    const renameDeleteHandlerComponent = this.addChild(
       new RenameDeleteHandlerComponent({
         abortSignalComponent: this.abortSignalComponent,
         app: this.app,
@@ -265,6 +260,12 @@ export class Plugin extends PluginBase {
         handlers: [htmlLinkUpdater.handleRenames.bind(htmlLinkUpdater), settingsPathWarner.handleRenames.bind(settingsPathWarner)]
       })
     );
+
+    this.pluginApi = new PluginApiImpl({
+      app: this.app,
+      pluginSettingsComponent,
+      renameDeleteHandlerComponent
+    });
 
     await this.commandHandlerComponent.registerCommandHandlers(() => [
       new DeleteEmptyFoldersCommandHandler({

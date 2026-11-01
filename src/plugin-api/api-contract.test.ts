@@ -1,5 +1,6 @@
 import type { ApiMethodContract } from '@mnaoumov/typescript-lib/api-contract';
 
+import { noopAsync } from '@mnaoumov/typescript-lib/function';
 import { castTo } from '@mnaoumov/typescript-lib/object-utils';
 import {
   describe,
@@ -48,6 +49,7 @@ const SETTINGS: HandedOverSettings = {
 
 const PATH: PayloadCase = { invalid: [[], [1], [null], ['a.md', 'extra'], 'a.md'], valid: [['a.md'], ['']] };
 const BOOLEAN: PayloadCase = { invalid: [undefined, null, 'true', 0], valid: [true, false] };
+const VOID: PayloadCase = { invalid: [null, false, {}], valid: [undefined] };
 
 const CASES: Record<MethodName, MethodCases> = {
   getSettings: {
@@ -97,6 +99,28 @@ const CASES: Record<MethodName, MethodCases> = {
       ]
     },
     output: { invalid: [null, {}, { isApplied: 'yes' }], valid: [{ isApplied: true }, { isApplied: false }] }
+  },
+  moveMany: {
+    input: {
+      invalid: [
+        [],
+        [null],
+        [{}],
+        [{ moves: null }],
+        [{ moves: [{ oldPath: 'a.md' }] }],
+        [{ moves: [{ newPath: 1, oldPath: 'a.md' }] }],
+        [{ moves: [null] }]
+      ],
+      valid: [
+        [{ moves: [] }],
+        [{ moves: [{ newPath: 'b/a.md', oldPath: 'a.md' }, { newPath: 'b/a.png', oldPath: 'a.png' }] }]
+      ]
+    },
+    output: VOID
+  },
+  runInBatch: {
+    input: { invalid: [[], [null], ['operation'], [{}]], valid: [[noopAsync]] },
+    output: VOID
   }
 };
 

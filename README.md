@@ -72,7 +72,7 @@ Last searched for similar plugins on 2026-10-26.
 
 ## For plugin developers
 
-Plugins that used to handle renames and deletions themselves hand their settings over through this plugin's API, read them back, and can declare this plugin as a dependency. The types are in [`api.d.ts`](./api.d.ts) and the contract in [`api-contract.ts`](./api-contract.ts), both copyable as they are; [Plugin API](./docs/plugin-api.md) walks through them.
+Plugins that used to handle renames and deletions themselves hand their settings over through this plugin's API, read them back, and can declare this plugin as a dependency. Any plugin can also move many files at once through it, with each linking note rewritten once and a promise that resolves when the links are final. The types are in [`api.d.ts`](./api.d.ts) and the contract in [`api-contract.ts`](./api-contract.ts), both copyable as they are; [Plugin API](./docs/plugin-api.md) walks through them.
 
 ## Installation
 

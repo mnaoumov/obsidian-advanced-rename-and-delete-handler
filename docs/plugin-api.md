@@ -6,7 +6,7 @@ Beside it, [`api-contract.ts`](../api-contract.ts) holds the published API's con
 
 This plugin owns those settings, so it owns the dialog too: your proposal is shown next to the current values, and the user approves, edits or declines it row by row. Nothing is written unless they press OK.
 
-The API is published through the `@mnaoumov/obsidian-lib` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first. The contract version is `1.2.0` and moves independently of the plugin's own version; ask for `'^1'`.
+The API is published through the `@mnaoumov/obsidian-lib` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first. The contract version is `1.3.0` and moves independently of the plugin's own version; ask for `'^1'`, or `'^1.3.0'` for the bulk moves below.
 
 ## Handing your settings over
 
@@ -77,6 +77,41 @@ if (api && !api.isPathIgnored(file.path) && !api.isTreatedAsAttachment(file.path
 - **`isTreatedAsAttachment(path)`** answers whether the path names an attachment despite its extension, by an ending such as `.excalidraw.md` or a `property:` entry matched against its frontmatter. A Markdown file Obsidian has not indexed yet matches no `property:` entry.
 - **Use the two predicates rather than re-matching the arrays yourself.** Every plugin bundles its own copy of `@mnaoumov/obsidian-lib`, so running the lists through your copy of the matching code is two copies that can drift apart; asking here keeps the matching in one place.
 - These arrived in contract `1.1.0`, and `shouldDeleteEmptyNoteFolders` in `getSettings()` in `1.2.0`. Both are purely additive, so `'^1'` still gets you them — but a vault running an older release will hand you an API without them, which is what `watchPluginApi`'s shape check is for.
+
+## Moving many files at once
+
+Renaming files one at a time through `app.fileManager.renameFile` rewrites every note that links to a moved file once per moved file, and gives you no point at which all the links are final. Two members take a whole set of moves instead, and resolve only once every link is rewritten. They arrived in contract `1.3.0`, so ask for `'^1.3.0'`.
+
+```ts
+const ref = watchPluginApi<AdvancedRenameAndDeleteHandlerApi>({
+  apiVersionRange: '^1.3.0',
+  app: this.app,
+  component: this,
+  contract: ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT,
+  pluginId: 'advanced-rename-and-delete-handler'
+});
+
+const api = await ref.whenAvailable();
+
+// You have the whole plan: list every file, attachments included.
+await api.moveMany({
+  moves: [
+    { newPath: 'Problems/00/0001 Two Sum.md', oldPath: 'Problems/0001 Two Sum.md' },
+    { newPath: 'Problems/00/!!files/0001 Two Sum/diagram.png', oldPath: 'Problems/!!files/0001 Two Sum/diagram.png' }
+  ]
+});
+
+// Or rename the usual way, attachments following per the settings, with the backlink rewrites held to the end.
+await api.runInBatch(async () => {
+  for (const [oldPath, newPath] of moves) {
+    await this.app.fileManager.renameFile(getFile(oldPath), newPath);
+  }
+});
+```
+
+- **`moveMany({ moves })`** resolves every link the moves affect while the vault is still as it was, moves all the files with no link update in between, handles the folders they left empty per the empty-folder setting, and then rewrites each affected note once against the final layout. The result does not depend on the order of the moves, and two moved notes that link each other both end up right. It moves **exactly** the files you list: attachments do not follow their note, because you already know where every file goes and an implicit move per note would bring back the per-file work this member skips. It acts whatever the rename setting and the include and exclude lists say, since you asked for it, and it does not follow links held in canvas files. It rejects before moving anything when a source is missing, a target exists, or two moves share a source or a target. Moving 4,096 notes with their 4,674 attachments took about 3 minutes each way, with no broken link.
+- **`runInBatch(operation)`** runs your renames through Obsidian as usual, so each file moves, its attachments follow it per the settings, and the renamed note's own links are rewritten as it happens. Only the rewrites of other notes' links are held back, and each such note is written once at the end, with paths followed through every rename of the batch. With **Handle renames** off nothing is held back and Obsidian updates the links itself. A rename in it must not reuse a path another rename in it freed.
+- **One bulk operation at a time.** Either member rejects while the other, or another call of itself, is running.
 
 ## Declaring this plugin as a dependency
 
