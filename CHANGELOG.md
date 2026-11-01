@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 3.3.0
+
+- perf(rename): narrow rename link snapshots and move many files at once
+
 ## 3.2.0
 
 - docs(readme): point bug reports at the Report a bug command
