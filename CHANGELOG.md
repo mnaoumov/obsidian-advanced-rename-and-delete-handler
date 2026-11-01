@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 3.2.0
+
+- docs(readme): point bug reports at the Report a bug command
+- docs: add issue-filing instructions for AI agents
+- feat: add a Report a bug command
+- chore(github): give the bug form the field ids bug-report links prefill
+- build(deps): float obsidian-dev-toolkit to ^7.4.0 and override re2js past GHSA-gg6h-894w-4m9c
+- build(deps): bump @mnaoumov/obsidian-lib to ^10.1.0 and adopt its Reference API names
+- build(deps): bump obsidian-dev-toolkit to ^7.1.1 and typescript-dev-toolkit to ^5.1.0
+- chore: adopt readonly interface members
+- docs(readme): combine related resources and plugin comparisons
+
 ## 3.1.1
 
 - refactor: group src into subject folders
