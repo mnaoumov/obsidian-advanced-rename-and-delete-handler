@@ -10,7 +10,9 @@
  * the plugin's own `manifest.version`. `1.1.0` added the three read-back members to `1.0.0`'s `migrateSettings`, and
  * `1.2.0` added {@link HandedOverSettings.shouldDeleteEmptyNoteFolders}, and `1.3.0` added
  * {@link AdvancedRenameAndDeleteHandlerApi.moveMany} and {@link AdvancedRenameAndDeleteHandlerApi.runInBatch}, all purely
- * additively, so ask for `^1` — or `^1.3.0` when you call one of the two bulk-move members. The README's `For plugin developers` section shows both routes: `watchPluginApi` for a
+ * additively. `1.4.0` adds {@link AdvancedRenameAndDeleteHandlerApi.subscribeBulkOperations}.
+ * Ask for `^1.4.0` for lifecycle notifications, or `^1.3.0` for just the bulk-move members.
+ * The README's `For plugin developers` section shows both routes: `watchPluginApi` for a
  * consumer that already has `@mnaoumov/obsidian-lib`, and the library-free registry read for one that does not.
  */
 
@@ -22,6 +24,29 @@
  * - `DeleteWithEmptyParents` deletes it, and then every parent that deleting it left empty in turn.
  */
 export type EmptyFolderBehavior = 'Delete' | 'DeleteWithEmptyParents' | 'Keep';
+
+/** The bulk method whose lifecycle is being observed. */
+export type BulkOperation = 'moveMany' | 'runInBatch';
+
+/** A paired lifecycle notification. Failure does not imply rollback of files already moved. */
+export type BulkOperationEvent = BulkOperationEndEvent | BulkOperationStartEvent;
+
+/** Completion after queued handler work and metadata parsing, including failure. */
+export interface BulkOperationEndEvent {
+  readonly isSuccessful: boolean;
+  readonly operation: BulkOperation;
+  readonly phase: 'end';
+}
+
+/** Start before changes; `isReplay` marks a subscription made during an active operation. */
+export interface BulkOperationStartEvent {
+  readonly isReplay?: boolean;
+  readonly operation: BulkOperation;
+  readonly phase: 'start';
+}
+
+/** A synchronous observer; returned promises are not awaited. */
+export type BulkOperationListener = (notification: BulkOperationEvent) => Promise<void> | void;
 
 /**
  * This plugin's API, as a consumer sees it.
@@ -128,6 +153,24 @@ export interface AdvancedRenameAndDeleteHandlerApi {
    * @returns A promise that resolves once the links are final.
    */
   runInBatch: (operation: () => Promise<void>) => Promise<void>;
+
+  /**
+   * Observes both bulk methods. Added in contract `1.4.0`; request `^1.4.0`.
+   *
+   * Start runs synchronously before any move; end runs after queued handler work and metadata parsing settle,
+   * including when the operation fails. It does not wait for the separate debounced HTML/settings follow-ups.
+   * Rejected overlapping calls and duplicate-plan validation emit nothing. Only one bulk operation runs at a time.
+   * Subscribing during a batch immediately replays its start with `isReplay: true`, allowing the observer to balance its state.
+   * Returned promises are not awaited; callback errors are reported without failing the batch or other observers.
+   *
+   * Register the returned idempotent unsubscribe function with your component. It stops all future callbacks,
+   * including an active batch's end. Provider unload also removes subscriptions. Re-subscribe to a new API handle
+   * after reload. An observer joining mid-batch must treat its snapshot as partial.
+   *
+   * @param listener - Receives immutable lifecycle events.
+   * @returns Stops this subscription, even after the provider handle is revoked.
+   */
+  subscribeBulkOperations: (listener: BulkOperationListener) => () => void;
 }
 
 /**

@@ -270,6 +270,8 @@ export class Plugin extends PluginBase {
       pluginSettingsComponent,
       renameDeleteHandlerComponent
     });
+    const pluginApi = this.pluginApi;
+    this.register(pluginApi.dispose.bind(pluginApi));
 
     await this.commandHandlerComponent.registerCommandHandlers(() => [
       new DeleteEmptyFoldersCommandHandler({

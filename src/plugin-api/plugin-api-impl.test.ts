@@ -45,7 +45,14 @@ function createApp(manifests: PluginManifests): AppOriginal {
    * that is the not-installed case — and a strict proxy throws on a missing key instead of answering
    * `undefined` the way the real record does.
    */
-  return castTo<AppOriginal>({ plugins: { manifests } });
+  return castTo<AppOriginal>({
+    metadataCache: {
+      onCleanCache: (callback: () => void) => {
+        callback();
+      }
+    },
+    plugins: { manifests }
+  });
 }
 
 let renameDeleteHandlerComponent: PluginApiImplConstructorParams['renameDeleteHandlerComponent'];

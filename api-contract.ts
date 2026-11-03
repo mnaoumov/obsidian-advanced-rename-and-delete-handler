@@ -46,6 +46,11 @@ import {
 
 import type {
   AdvancedRenameAndDeleteHandlerApi,
+  BulkOperation,
+  BulkOperationEndEvent,
+  BulkOperationEvent,
+  BulkOperationListener,
+  BulkOperationStartEvent,
   EmptyFolderBehavior,
   FileMove,
   HandedOverSettings,
@@ -130,6 +135,26 @@ function isBatchOperation(value: unknown): value is () => Promise<void> {
 
 const PATH_GUARD = { ...STRING_GUARD, expected: 'a path' };
 
+const isBulkOperation = literalTypeGuard<BulkOperation>({ moveMany: true, runInBatch: true });
+const isBulkOperationStart = objectTypeGuard<BulkOperationStartEvent>({ isReplay: optionalTypeGuard(isBoolean), operation: isBulkOperation, phase: literalTypeGuard({ start: true }) });
+const isBulkOperationEnd = objectTypeGuard<BulkOperationEndEvent>({ isSuccessful: isBoolean, operation: isBulkOperation, phase: literalTypeGuard({ end: true }) });
+
+/**
+The notification payload schema, shared by diagnostic consumers and the provider.
+*/
+export const BULK_OPERATION_EVENT_SCHEMA = createTypeGuardSchema(createExpectedTypeGuard(
+  'a bulk operation event',
+  (value: unknown): value is BulkOperationEvent => isBulkOperationStart(value) || isBulkOperationEnd(value)
+));
+
+function isBulkOperationListener(value: unknown): value is BulkOperationListener {
+  return typeof value === 'function';
+}
+
+function isUnsubscribe(value: unknown): value is () => void {
+  return typeof value === 'function';
+}
+
 /**
  * The contract this plugin publishes with {@link AdvancedRenameAndDeleteHandlerApi}, for a consumer to pass as
  * the `contract` when it looks the API up.
@@ -160,5 +185,9 @@ export const ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT: AdvancedRenameAndD
   runInBatch: {
     input: createArgumentsSchema([createExpectedTypeGuard('a function performing the renames', isBatchOperation)]),
     output: createTypeGuardSchema(UNDEFINED_GUARD)
+  },
+  subscribeBulkOperations: {
+    input: createArgumentsSchema([createExpectedTypeGuard('a bulk operation listener', isBulkOperationListener)]),
+    output: createTypeGuardSchema(createExpectedTypeGuard('an unsubscribe function', isUnsubscribe))
   }
 });

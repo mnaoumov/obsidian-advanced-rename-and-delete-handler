@@ -13,7 +13,10 @@ import type {
   HandedOverSettings
 } from '../../api.d.ts';
 
-import { ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT } from '../../api-contract.ts';
+import {
+  ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT,
+  BULK_OPERATION_EVENT_SCHEMA
+} from '../../api-contract.ts';
 
 interface MethodCases {
   readonly input: PayloadCase;
@@ -121,10 +124,25 @@ const CASES: Record<MethodName, MethodCases> = {
   runInBatch: {
     input: { invalid: [[], [null], ['operation'], [{}]], valid: [[noopAsync]] },
     output: VOID
+  },
+  subscribeBulkOperations: {
+    input: { invalid: [[], [null], ['listener'], [{}], [noopAsync, 'extra']], valid: [[noopAsync]] },
+    output: { invalid: [undefined, null, {}, true], valid: [noopAsync] }
   }
 };
 
 describe('ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT', () => {
+  it('validates start and end notifications for both methods', async () => {
+    for (const operation of ['moveMany', 'runInBatch']) {
+      for (const value of [{ operation, phase: 'start' }, { isReplay: true, operation, phase: 'start' }, { isSuccessful: true, operation, phase: 'end' }, { isSuccessful: false, operation, phase: 'end' }]) {
+        expect(await validate(BULK_OPERATION_EVENT_SCHEMA, value)).toEqual({ value });
+      }
+    }
+    for (const value of [null, {}, { isReplay: 'yes', operation: 'moveMany', phase: 'start' }, { operation: 'delete', phase: 'start' }, { operation: 'moveMany', phase: 'finish' }, { operation: 'runInBatch', phase: 'end' }, { isSuccessful: 'yes', operation: 'moveMany', phase: 'end' }]) {
+      const result = await validate(BULK_OPERATION_EVENT_SCHEMA, value);
+      expect(result.issues).not.toHaveLength(0);
+    }
+  });
   it('should have one entry per method of the API, each with both schemas', () => {
     expect(Object.keys(ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT).sort()).toEqual(Object.keys(CASES).sort());
     for (const methodName of castTo<MethodName[]>(Object.keys(ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT))) {

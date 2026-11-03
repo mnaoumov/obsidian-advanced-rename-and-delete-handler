@@ -214,6 +214,20 @@ function installConflictingPlugin(app: App): void {
 
 describe('Plugin', () => {
   describe('with no conflicting plugin installed', () => {
+    it('disposes its bulk observers through the real component unload lifecycle', async () => {
+      const app = createConfiguredApp();
+      const plugin = new Plugin(app, PLUGIN_MANIFEST);
+      const disposeSpy = vi.spyOn(PluginApiImpl.prototype, 'dispose');
+      try {
+        plugin.load();
+        const ref = watchPluginApi<object>({ apiVersionRange: '^1.4.0', app, component: plugin, pluginId: PLUGIN_MANIFEST.id });
+        await ref.whenAvailable();
+        plugin.unload();
+        expect(disposeSpy).toHaveBeenCalledOnce();
+      } finally {
+        disposeSpy.mockRestore();
+      }
+    });
     it('should add its own settings component and settings tab', async () => {
       const plugin = new Plugin(createConfiguredApp(), PLUGIN_MANIFEST);
       const addChildSpy = vi.spyOn(plugin, 'addChild');
