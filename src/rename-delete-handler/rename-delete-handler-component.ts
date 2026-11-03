@@ -231,6 +231,10 @@ export interface RescueDestination {
   readonly unitFolderPath: null | string;
 }
 
+interface BatchOperationFailure {
+  readonly error: unknown;
+}
+
 interface DeleteHandlerConstructorParams {
   readonly abortSignal: AbortSignal;
   readonly app: App;
@@ -2021,6 +2025,7 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
    * them, instead of once per renamed file. Every rename still moves its file and attachments, and rewrites the
    * renamed note's own links, as it happens; only the rewrites of other notes' links are held back
    * ({@link BacklinkBatch}). A vault-wide move that touches a big list note hundreds of times touches it once.
+   * If the operation fails, completed renames are finalized before its original error is rethrown.
    *
    * @param operation - Performs the renames. A rename must not reuse a path another rename in it frees.
    * @returns A {@link Promise} that resolves once every held-back link is rewritten.
@@ -2032,8 +2037,49 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
 
     const backlinkBatch = new BacklinkBatch();
     this.backlinkBatch = backlinkBatch;
+    let operationFailure: BatchOperationFailure | null = null;
     try {
       await operation();
+    } catch (error) {
+      operationFailure = { error };
+    }
+
+    try {
+      await this.finalizeRenameBatch(backlinkBatch);
+    } catch (error) {
+      if (!operationFailure) {
+        throw error;
+      }
+      // Report a finalization failure without replacing the caller's original rejection.
+      printError(new Error('Failed to finalize a failed rename batch.', { cause: error }));
+    }
+    if (operationFailure) {
+      throw operationFailure.error;
+    }
+  }
+
+  /**
+   * Stops every File Explorer from re-sorting until the returned function is called, which sorts each once.
+   *
+   * @returns The function that restores sorting.
+   */
+  private deferFileExplorerSorting(): () => void {
+    const views = this.app.workspace.getLeavesOfType(FILE_EXPLORER_VIEW_TYPE).map((leaf): unknown => leaf.view).filter(isSortableView);
+    const requestSorts = views.map((view) => view.requestSort);
+    for (const view of views) {
+      // The view's own property shadows the debounced sort; the original is put back below.
+      Object.assign(view, { requestSort: noop });
+    }
+    return (): void => {
+      for (const [index, view] of views.entries()) {
+        Object.assign(view, { requestSort: requestSorts[index] ?? noop });
+        view.requestSort();
+      }
+    };
+  }
+
+  private async finalizeRenameBatch(backlinkBatch: BacklinkBatch): Promise<void> {
+    try {
       // The batch's rename handlers are queued; each adds its snapshot to the batch when it runs.
       await flushQueue();
     } finally {
@@ -2088,26 +2134,6 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
         resourceLockComponent: this.resourceLockComponent
       });
     }
-  }
-
-  /**
-   * Stops every File Explorer from re-sorting until the returned function is called, which sorts each once.
-   *
-   * @returns The function that restores sorting.
-   */
-  private deferFileExplorerSorting(): () => void {
-    const views = this.app.workspace.getLeavesOfType(FILE_EXPLORER_VIEW_TYPE).map((leaf): unknown => leaf.view).filter(isSortableView);
-    const requestSorts = views.map((view) => view.requestSort);
-    for (const view of views) {
-      // The view's own property shadows the debounced sort; the original is put back below.
-      Object.assign(view, { requestSort: noop });
-    }
-    return (): void => {
-      for (const [index, view] of views.entries()) {
-        Object.assign(view, { requestSort: requestSorts[index] ?? noop });
-        view.requestSort();
-      }
-    };
   }
 
   private handleDelete(file: TAbstractFile): void {
