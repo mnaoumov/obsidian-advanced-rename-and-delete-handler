@@ -29,6 +29,11 @@ import { ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT } from '../../api-contr
 
 export type {
   AdvancedRenameAndDeleteHandlerApi,
+  BulkOperation,
+  BulkOperationEndEvent,
+  BulkOperationEvent,
+  BulkOperationListener,
+  BulkOperationStartEvent,
   EmptyFolderBehavior,
   FileMove,
   HandedOverSettings,
@@ -49,6 +54,7 @@ export const PLUGIN_API_CONTRACT: ApiContract = ADVANCED_RENAME_AND_DELETE_HANDL
  * The version of the contract above — independent of the plugin's own version.
  *
  * `1.1.0` added the read-back members, `1.2.0` the `shouldDeleteEmptyNoteFolders` setting and `1.3.0` the bulk-move
- * members `moveMany` and `runInBatch`; all are purely additive, so consumers still ask for `'^1'`.
+ * members `moveMany` and `runInBatch`, and `1.4.0` the lifecycle subscription. All are purely additive;
+ * consumers of the subscription request `'^1.4.0'`.
  */
-export const PLUGIN_API_VERSION = '1.3.0';
+export const PLUGIN_API_VERSION = '1.4.0';

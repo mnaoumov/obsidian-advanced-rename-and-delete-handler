@@ -6,7 +6,7 @@ Beside it, [`api-contract.ts`](../api-contract.ts) holds the published API's con
 
 This plugin owns those settings, so it owns the dialog too: your proposal is shown next to the current values, and the user approves, edits or declines it row by row. Nothing is written unless they press OK.
 
-The API is published through the `@mnaoumov/obsidian-lib` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first. The contract version is `1.3.0` and moves independently of the plugin's own version; ask for `'^1'`, or `'^1.3.0'` for the bulk moves below.
+The API is published through the `@mnaoumov/obsidian-lib` cross-plugin registry, which gives you version negotiation, a handle that is revoked when this plugin unloads, and a wait that ends when this plugin loads — rather than a lookup that returns `undefined` because it ran first. The contract version is `1.4.0` and moves independently of the plugin's own version; ask for `'^1.4.0'` for lifecycle notifications, or `'^1.3.0'` for bulk moves alone. When copying the full current contract, request `'^1.4.0'`: its shape check includes the subscription member.
 
 ## Handing your settings over
 
@@ -112,6 +112,41 @@ await api.runInBatch(async () => {
 - **`moveMany({ moves })`** resolves every link the moves affect while the vault is still as it was, moves all the files with no link update in between, handles the folders they left empty per the empty-folder setting, and then rewrites each affected note once against the final layout. The result does not depend on the order of the moves, and two moved notes that link each other both end up right. It moves **exactly** the files you list: attachments do not follow their note, because you already know where every file goes and an implicit move per note would bring back the per-file work this member skips. It acts whatever the rename setting and the include and exclude lists say, since you asked for it, and it does not follow links held in canvas files. It rejects before moving anything when a source is missing, a target exists, or two moves share a source or a target. Moving 4,096 notes with their 4,674 attachments took about 3 minutes each way, with no broken link.
 - **`runInBatch(operation)`** runs your renames through Obsidian as usual, so each file moves, its attachments follow it per the settings, and the renamed note's own links are rewritten as it happens. Only the rewrites of other notes' links are held back, and each such note is written once at the end, with paths followed through every rename of the batch. With **Handle renames** off nothing is held back and Obsidian updates the links itself. A rename in it must not reuse a path another rename in it freed.
 - **One bulk operation at a time.** Either member rejects while the other, or another call of itself, is running.
+
+## Observing bulk operations
+
+Diagnostics can hold their link snapshot across another plugin's bulk moves through `subscribeBulkOperations`, added in contract `1.4.0`. Request `'^1.4.0'` and subscribe again whenever the watched API changes:
+
+```ts
+const ref = watchPluginApi<AdvancedRenameAndDeleteHandlerApi>({
+  apiVersionRange: '^1.4.0',
+  app: this.app,
+  component: this,
+  contract: ADVANCED_RENAME_AND_DELETE_HANDLER_API_CONTRACT,
+  pluginId: 'advanced-rename-and-delete-handler'
+});
+
+let unsubscribe: (() => void) | undefined;
+const connect = (): void => {
+  unsubscribe?.();
+  unsubscribe = ref.value?.subscribeBulkOperations((event) => {
+    if (event.phase === 'start') {
+      // Capture before any file moves, or treat the snapshot as partial when event.isReplay is true.
+    } else {
+      // Compare once, also when event.isSuccessful is false: partial moves are not rolled back.
+    }
+  });
+};
+ref.on('change', connect);
+this.register(() => unsubscribe?.());
+connect();
+```
+
+Notifications are immutable plain data; their types live in [`api.d.ts`](../api.d.ts), and `BULK_OPERATION_EVENT_SCHEMA` in [`api-contract.ts`](../api-contract.ts) validates their payloads. The method contract validates that the listener and unsubscribe value are callable. As with other callback APIs, it cannot check a callback's body or return value.
+
+Start runs synchronously before either bulk method starts its work. End runs in `finally`, after queued rename-handler work and metadata parsing settle, even on failure. It does not wait for the separate debounced HTML-link and settings-path follow-ups. Callbacks are synchronous observers; returned promises are not awaited. Observer errors are reported without interrupting moves or other observers. An overlapping call, or a plan rejected for duplicate sources or targets, emits no pair.
+
+Subscribing during a batch immediately replays its start with `isReplay: true`; the snapshot is then partial. Unsubscribe is idempotent and stops every future callback, including that batch's end. Clear any locally held state when disconnecting. Provider unload removes its observers; the returned unsubscribe still works after the API handle is revoked.
 
 ## Declaring this plugin as a dependency
 

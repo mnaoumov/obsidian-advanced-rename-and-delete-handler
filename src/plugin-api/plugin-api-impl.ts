@@ -9,6 +9,8 @@
 
 import type { App } from 'obsidian';
 
+import { flushQueue } from '@mnaoumov/obsidian-lib/queue';
+import { snapshot } from '@mnaoumov/typescript-lib/array';
 import {
   noop,
   noopAsync
@@ -18,6 +20,9 @@ import type { RenameDeleteHandlerComponent } from '../rename-delete-handler/rena
 import type { PluginSettingsComponent } from '../settings/plugin-settings-component.ts';
 import type {
   AdvancedRenameAndDeleteHandlerApi,
+  BulkOperation,
+  BulkOperationEvent,
+  BulkOperationListener,
   HandedOverSettings,
   MigrateSettingsParams,
   MigrateSettingsResult,
@@ -54,7 +59,11 @@ export interface PluginApiImplConstructorParams {
  * This plugin's API, as it is actually implemented.
  */
 export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
+  private activeBulkOperation: BulkOperation | null = null;
+
   private readonly app: App;
+
+  private readonly bulkOperationListeners = new Set<BulkOperationListener>();
 
   /**
    * Set while {@link moveMany} or {@link runInBatch} runs, from the call to the last rewrite. The component guards
@@ -75,6 +84,13 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
     this.app = params.app;
     this.pluginSettingsComponent = params.pluginSettingsComponent;
     this.renameDeleteHandlerComponent = params.renameDeleteHandlerComponent;
+  }
+
+  /**
+  Removes observers when the provider unloads.
+  */
+  public dispose(): void {
+    this.bulkOperationListeners.clear();
   }
 
   /**
@@ -173,7 +189,7 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
       newPaths.add(newPath);
     }
 
-    await this.runBulkOperation(async () => {
+    await this.runBulkOperation('moveMany', async () => {
       await this.renameDeleteHandlerComponent.moveMany(plan);
     });
   }
@@ -185,9 +201,29 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
    * @returns A {@link Promise} that resolves once the links are final.
    */
   public async runInBatch(operation: () => Promise<void>): Promise<void> {
-    await this.runBulkOperation(async () => {
+    await this.runBulkOperation('runInBatch', async () => {
       await this.renameDeleteHandlerComponent.runInBatch(operation);
     });
+  }
+
+  /**
+   * Subscribes to the lifecycle of both bulk methods.
+   *
+   * @param listener - The synchronous observer.
+   * @returns An idempotent unsubscribe function.
+   */
+  public subscribeBulkOperations(listener: BulkOperationListener): () => void {
+    // Each registration is independent, even when the caller reuses the same function.
+    function subscription(notification: BulkOperationEvent): Promise<void> | void {
+      return listener(notification);
+    }
+    this.bulkOperationListeners.add(subscription);
+    if (this.activeBulkOperation) {
+      this.notifyBulkOperationListener(subscription, { isReplay: true, operation: this.activeBulkOperation, phase: 'start' });
+    }
+    return () => {
+      this.bulkOperationListeners.delete(subscription);
+    };
   }
 
   private getSourcePluginName(sourcePluginId: string): string {
@@ -226,16 +262,50 @@ export class PluginApiImpl implements AdvancedRenameAndDeleteHandlerApi {
     return { isApplied: true };
   }
 
-  private async runBulkOperation(operation: () => Promise<void>): Promise<void> {
+  private notifyBulkOperation(notification: BulkOperationEvent): void {
+    for (const listener of snapshot(this.bulkOperationListeners)) {
+      if (this.bulkOperationListeners.has(listener)) {
+        this.notifyBulkOperationListener(listener, notification);
+      }
+    }
+  }
+
+  private notifyBulkOperationListener(listener: BulkOperationListener, notification: BulkOperationEvent): void {
+    try {
+      // Catch rejected promises too: TypeScript permits an async function where a void callback is expected.
+      Promise.resolve(listener(Object.freeze(notification))).catch((error: unknown) => {
+        console.error('Bulk operation observer failed.', error);
+      });
+    } catch (error) {
+      console.error('Bulk operation observer failed.', error);
+    }
+  }
+
+  private async runBulkOperation(kind: BulkOperation, operation: () => Promise<void>): Promise<void> {
     if (this.isBulkOperationRunning) {
       throw new Error('A bulk move is already running.');
     }
 
     this.isBulkOperationRunning = true;
+    this.activeBulkOperation = kind;
+    let isSuccessful = false;
     try {
+      this.notifyBulkOperation({ operation: kind, phase: 'start' });
       await operation();
+      isSuccessful = true;
     } finally {
-      this.isBulkOperationRunning = false;
+      try {
+        // A failed operation can still have handlers queued by renames it already completed.
+        await flushQueue();
+        await new Promise<void>((resolve) => {
+          this.app.metadataCache.onCleanCache(resolve);
+        });
+      } finally {
+        this.activeBulkOperation = null;
+        // Keep the overlap guard through end callbacks so a callback cannot interleave a new batch's start.
+        this.notifyBulkOperation({ isSuccessful, operation: kind, phase: 'end' });
+        this.isBulkOperationRunning = false;
+      }
     }
   }
 }
