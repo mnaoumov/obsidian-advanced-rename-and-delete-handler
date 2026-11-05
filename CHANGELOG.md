@@ -17,9 +17,9 @@
 - docs: add issue-filing instructions for AI agents
 - feat: add a Report a bug command
 - chore(github): give the bug form the field ids bug-report links prefill
-- build(deps): float obsidian-dev-toolkit to ^7.4.0 and override re2js past GHSA-gg6h-894w-4m9c
+- build(deps): float `obsidian-dev-toolkit` to ^7.4.0 and override re2js past GHSA-gg6h-894w-4m9c
 - build(deps): bump @mnaoumov/obsidian-lib to ^10.1.0 and adopt its Reference API names
-- build(deps): bump obsidian-dev-toolkit to ^7.1.1 and typescript-dev-toolkit to ^5.1.0
+- build(deps): bump `obsidian-dev-toolkit` to ^7.1.1 and `typescript-dev-toolkit` to ^5.1.0
 - chore: adopt readonly interface members
 - docs(readme): combine related resources and plugin comparisons
 
@@ -43,11 +43,11 @@
 - fix(demo-vault): keep one `CodeScript Toolkit` minVersion, the 15.0.0 floor
 - test(demo-vault): floor `CodeScript Toolkit` at 15.0.0
 - style: format the multi-link property integration test so the gate passes
-- docs: name obsidian-lib where comments said dev-utils
+- docs: name `obsidian-lib` where comments said dev-utils
 - docs: shorten the debugging section
 - docs(changelog): name the issue each released entry resolved
 - fix: update every link inside a multi-link frontmatter value on rename
-- docs: point the remaining obsidian-dev-utils mentions at obsidian-lib
+- docs: point the remaining `obsidian-dev-utils` mentions at `obsidian-lib`
 - docs(readme): lead the Debugging section with `Advanced Debug Mode`
 - test(canvas-link-update-prompt): keep alwaysUpdateLinks off for the whole move, or say it was not
 - test(rename-link-update): report which part stalled when the link stays stale
@@ -65,12 +65,12 @@
 ## 2.3.0
 
 - test(android): re-write files the emulator writes as empty
-- refactor(api-contract): merge building the contract guards from typescript-lib 1.3.0
+- refactor(api-contract): merge building the contract guards from `typescript-lib` 1.3.0
 - fix(rename): merge rewriting a folder's links past a note with unparseable frontmatter
 - chore(github): point questions to Discussions from the new-issue page
 - feat(delete): add shouldDeleteEmptyNoteFolders, off by default
 - ci: merge attesting release assets through the toolkit's reusable workflow
-- build(demo-vault): require `CodeScript Toolkit` 13.8.0 for the obsidian-lib demo script
+- build(demo-vault): require `CodeScript Toolkit` 13.8.0 for the `obsidian-lib` demo script
 
 ## 2.2.1
 
@@ -78,11 +78,11 @@
 
 ## 2.2.0
 
-- build(deps): merge moving off obsidian-dev-utils onto the @mnaoumov packages
+- build(deps): merge moving off `obsidian-dev-utils` onto the @mnaoumov packages
 - refactor(api): merge building the API contract on @mnaoumov/typescript-lib/api-contract
 - feat(api): merge shipping the API contract as a copyable api-contract.ts
 - fix(ui): merge showing plugin names as code
-- test: merge using the obsidian-typings declarations of Obsidian internals
+- test: merge using the `obsidian-typings` declarations of Obsidian internals
 
 ## 2.1.2
 
@@ -92,7 +92,7 @@
 
 - test(screenshots): merge setting the dark theme through applyObsidianTheme
 - test(android): verify the stub plugin writes in the manifest suites
-- chore(deps): take obsidian-dev-utils 107.2.0
+- chore(deps): take `obsidian-dev-utils` 107.2.0
 - refactor(backlinks): drop the local backlink index for the library one
 - fix(rename): recognize `Advanced Metadata Cache` in the canvas gate
 
@@ -100,7 +100,7 @@
 
 - feat(settings): *Treat as attachment extensions* accepts `property:name` and `property:name=value` entries, matched against a note's frontmatter, so an `Excalidraw` drawing saved as a plain `.md` is an attachment by its `excalidraw-plugin` property (`Custom Attachment Location` #90). The default is now `.excalidraw.md` plus `property:excalidraw-plugin`. **A list you already have saved is not changed:** to get the new behaviour, add `property:excalidraw-plugin` on its own line in the settings tab. A property entry matches a file only once Obsidian has indexed it.
 - fix(conflicts): stop warning about *Delete empty folders* on `Consistent Attachments and Links` 4.1.0, which no longer offers that command.
-- chore(deps): obsidian-dev-utils 107.1.0 and obsidian-integration-testing 17.
+- chore(deps): `obsidian-dev-utils` 107.1.0 and `obsidian-integration-testing` 17.
 
 ## 2.0.0
 
@@ -110,7 +110,7 @@
 - feat: the settings tab lists the plugins that depend on this one.
 - feat: warn when `Consistent Attachments and Links` 4.x also offers the Delete empty folders command.
 - fix(ui): tell same-named notes apart on the rescue dialog's buttons (#1).
-- fix(rename): a canvas whose text node embeds an attachment no longer holds the operation queue forever when moved.
+- fix(rename): a canvas whose text `node` embeds an attachment no longer holds the operation queue forever when moved.
 - fix(rename): link updates in canvases are applied without the *Update links* prompt while rename handling is on.
 - perf(rename): renaming a folder of notes no longer walks the whole vault twice per renamed file.
 - perf(delete): folder deletion answers its backlink checks from an index instead of walking the vault.
@@ -129,7 +129,7 @@
 
 ## 1.2.0
 
-- chore(deps): sweep onto obsidian-dev-utils 98, integration-testing 12 and test-mocks 5
+- chore(deps): sweep onto `obsidian-dev-utils` 98, integration-testing 12 and test-mocks 5
 - test(rename-delete): adopt the regression suites the attachment plugin hands over
 - test(bulk-delete): port the `Consistent Attachments and Links` performance suite onto the handler that owns the cost
 - test(rename-delete-handler): land the runAsyncLinkUpdate suppression guards
@@ -139,7 +139,7 @@
 ## 1.1.1
 
 - chore(deps): sweep caret-ranged dependencies to latest
-- fix(deps): move to obsidian-integration-testing 11 and obsidian-dev-utils 96.5.2
+- fix(deps): move to `obsidian-integration-testing` 11 and `obsidian-dev-utils` 96.5.2
 - fix(deps): drop the brace-expansion file: override that breaks a clean install
 
 ## 1.1.0

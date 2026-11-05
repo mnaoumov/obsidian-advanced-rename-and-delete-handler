@@ -162,15 +162,14 @@ export class RescuePathResolver {
    * @returns The adopting note's path, or `null` to leave the attachment where it is.
    */
   private async askWhoAdopts(params: RescuePathResolverAskWhoAdoptsParams): Promise<null | string> {
-    if (this.pluginSettingsComponent.settings.rescueAttachmentUsedByMultipleNotesMode !== RescueAttachmentUsedByMultipleNotesMode.Prompt) {
-      return null;
-    }
-
     /*
-     * A single survivor never reaches here — it wins outright — so anything short of two notes is a
-     * deletion with nothing to choose between, and there is no question to put.
+     * Only the prompt mode asks. And a single survivor never reaches here — it wins outright — so anything
+     * short of two notes is a deletion with nothing to choose between, and there is no question to put.
      */
-    if (params.survivingNotePaths.length < MINIMUM_NOTES_TO_CHOOSE_BETWEEN) {
+    if (
+      this.pluginSettingsComponent.settings.rescueAttachmentUsedByMultipleNotesMode !== RescueAttachmentUsedByMultipleNotesMode.Prompt
+      || params.survivingNotePaths.length < MINIMUM_NOTES_TO_CHOOSE_BETWEEN
+    ) {
       return null;
     }
 

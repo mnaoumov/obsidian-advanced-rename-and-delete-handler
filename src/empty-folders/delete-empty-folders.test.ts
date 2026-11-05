@@ -65,8 +65,8 @@ function createApp(folderPaths: string[]): AppOriginal {
   });
 }
 
-function getCleanupParams(callIndex: number): CleanupEmptyFoldersParams {
-  return castTo<CleanupEmptyFoldersParams>(mockCleanupEmptyFolders.mock.calls[callIndex]?.[0]);
+function getFirstCleanupParams(): CleanupEmptyFoldersParams {
+  return castTo<CleanupEmptyFoldersParams>(mockCleanupEmptyFolders.mock.calls[0]?.[0]);
 }
 
 function getLoopParams(): LoopParams<string> {
@@ -151,8 +151,8 @@ describe('deleteEmptyFolders', () => {
     });
 
     expect(mockCleanupEmptyFolders).toHaveBeenCalledOnce();
-    expect(getCleanupParams(0).emptyFolderBehavior).toBe(EmptyFolderBehavior.Delete);
-    expect(getCleanupParams(0).folderPaths).toEqual(['empty']);
+    expect(getFirstCleanupParams().emptyFolderBehavior).toBe(EmptyFolderBehavior.Delete);
+    expect(getFirstCleanupParams().folderPaths).toEqual(['empty']);
   });
 
   it('should pass Delete through unchanged', async () => {
@@ -161,7 +161,7 @@ describe('deleteEmptyFolders', () => {
       folderPaths: ['empty']
     });
 
-    expect(getCleanupParams(0).emptyFolderBehavior).toBe(EmptyFolderBehavior.Delete);
+    expect(getFirstCleanupParams().emptyFolderBehavior).toBe(EmptyFolderBehavior.Delete);
   });
 
   it('should pass DeleteWithEmptyParents through unchanged, even though a deepest-first pass reaches the parents anyway', async () => {
@@ -170,7 +170,7 @@ describe('deleteEmptyFolders', () => {
       folderPaths: ['empty']
     });
 
-    expect(getCleanupParams(0).emptyFolderBehavior).toBe(EmptyFolderBehavior.DeleteWithEmptyParents);
+    expect(getFirstCleanupParams().emptyFolderBehavior).toBe(EmptyFolderBehavior.DeleteWithEmptyParents);
   });
 
   it('should delete nothing once the sweep is aborted', async () => {
