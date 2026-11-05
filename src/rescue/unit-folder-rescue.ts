@@ -61,9 +61,6 @@ export interface UnitFolderMove {
  */
 export function planUnitFolderMove(params: PlanUnitFolderMoveParams): null | UnitFolderMove {
   const oldFolderPath = params.rescueDestination.unitFolderPath;
-  if (oldFolderPath === null) {
-    return null;
-  }
 
   /*
    * STRICTLY inside: a unit folder that IS the folder being deleted — or that contains it — must not be
@@ -71,7 +68,7 @@ export function planUnitFolderMove(params: PlanUnitFolderMoveParams): null | Uni
    * they named. Such an attachment falls back to the lone-file rescue, which is what it got before unit
    * folders were honored at all.
    */
-  if (!isStrictlyInside(oldFolderPath, params.rootFolderPath)) {
+  if (oldFolderPath === null || !isStrictlyInside(oldFolderPath, params.rootFolderPath)) {
     return null;
   }
 

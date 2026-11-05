@@ -197,18 +197,17 @@ describe('A consumer plugin proposing its rename/delete settings', () => {
 
         await settlementPromise;
         const migrateSettingsResult = await migrationPromise;
-        function readSavedValue(record: unknown, key: string): unknown {
-          return typeof record !== 'object' || record === null ? undefined : Object.entries(record).find(([entryKey]) => entryKey === key)?.[1];
+        const savedRecord: unknown = await plugin.loadData();
+        function readSavedValue(key: string): unknown {
+          return typeof savedRecord !== 'object' || savedRecord === null ? undefined : Object.entries(savedRecord).find(([entryKey]) => entryKey === key)?.[1];
         }
-
-        const savedRecord = await plugin.loadData();
 
         return {
           isApplied: migrateSettingsResult.isApplied,
           rowNames,
-          savedNotePriorities: readSavedValue(savedRecord, 'notePriorities'),
-          savedShouldHandleDeletions: readSavedValue(savedRecord, 'shouldHandleDeletions'),
-          savedShouldRenameAttachmentFiles: readSavedValue(savedRecord, 'shouldRenameAttachmentFiles'),
+          savedNotePriorities: readSavedValue('notePriorities'),
+          savedShouldHandleDeletions: readSavedValue('shouldHandleDeletions'),
+          savedShouldRenameAttachmentFiles: readSavedValue('shouldRenameAttachmentFiles'),
           title
         };
       },
@@ -294,18 +293,17 @@ describe('A consumer plugin proposing its rename/delete settings', () => {
 
         await settlementPromise;
         const migrateSettingsResult = await migrationPromise;
-        function readSavedValue(record: unknown, key: string): unknown {
-          return typeof record !== 'object' || record === null ? undefined : Object.entries(record).find(([entryKey]) => entryKey === key)?.[1];
+        const savedRecord: unknown = await plugin.loadData();
+        function readSavedValue(key: string): unknown {
+          return typeof savedRecord !== 'object' || savedRecord === null ? undefined : Object.entries(savedRecord).find(([entryKey]) => entryKey === key)?.[1];
         }
-
-        const savedRecord = await plugin.loadData();
 
         return {
           isApplied: migrateSettingsResult.isApplied,
           rowNames: [],
-          savedNotePriorities: readSavedValue(savedRecord, 'notePriorities'),
-          savedShouldHandleDeletions: readSavedValue(savedRecord, 'shouldHandleDeletions'),
-          savedShouldRenameAttachmentFiles: readSavedValue(savedRecord, 'shouldRenameAttachmentFiles'),
+          savedNotePriorities: readSavedValue('notePriorities'),
+          savedShouldHandleDeletions: readSavedValue('shouldHandleDeletions'),
+          savedShouldRenameAttachmentFiles: readSavedValue('shouldRenameAttachmentFiles'),
           title: ''
         };
       },

@@ -67,13 +67,9 @@ describe('A plugin that declares this one as a dependency', () => {
 
         function isHeadingShown(): boolean {
           const containerEl = app.setting.activeTab?.containerEl;
-          if (!containerEl) {
-            return false;
-          }
-
           // Matched by text on a leaf element rather than by class: what is asserted is that the heading is on
           // screen, whichever element Obsidian's group renderer puts it in.
-          return [...containerEl.querySelectorAll<HTMLElement>('*')]
+          return containerEl !== undefined && [...containerEl.querySelectorAll<HTMLElement>('*')]
             .some((el) => el.childElementCount === 0 && el.textContent === dependentsHeading && el.isShown());
         }
 
