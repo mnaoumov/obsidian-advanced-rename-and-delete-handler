@@ -1,3 +1,5 @@
+import type { EventRef } from 'obsidian';
+
 import {
   ContextId,
   evalInObsidian,
@@ -131,6 +133,11 @@ const MOVE_TIMEOUT_IN_MILLISECONDS = 90_000;
  */
 const REWRITE_TIMEOUT_IN_MILLISECONDS = 45_000;
 
+/**
+ * How long the stall report waits to see whether the handler's queue drains.
+ */
+const QUEUE_PROBE_IN_MILLISECONDS = 2000;
+
 interface MigratableSettingsLike {
   readonly shouldHandleRenames?: boolean;
   readonly shouldRenameAttachmentFolder?: boolean;
@@ -146,6 +153,7 @@ interface MigrateSettingsResultLike {
 }
 
 interface MigrationApiLike {
+  readonly getSettings?: () => unknown;
   readonly migrateSettings: (params: MigrateSettingsParamsLike) => Promise<MigrateSettingsResultLike>;
 }
 
@@ -170,6 +178,24 @@ interface MoveProbe {
 interface NoteMoveContext {
   // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
   renameError?: string;
+
+  /**
+   * The vault `rename` listener `start` registers, so the stall report can say which renames arrived.
+   */
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
+  renameEventRef?: EventRef;
+
+  /**
+   * Every vault `rename` event since the rename was fired, as `+<ms> <old> -> <new>`.
+   */
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
+  renameLog?: string[];
+
+  /**
+   * When `start` fired the rename, as `Date.now()`.
+   */
+  // eslint-disable-next-line typescript-dev-toolkit/readonly-interface-members -- The running integration probe updates this state across callbacks.
+  renameStartTime?: number;
 }
 
 interface NoteMoveResult {
@@ -267,6 +293,7 @@ describe('Moving a note with attachments', () => {
          */
         expect(result.staleLinks).toStrictEqual([]);
       } finally {
+        await stopRecordingRenames();
         await drainQueue();
         await restore(originalConfigs);
         await contextId.dispose();
@@ -411,7 +438,31 @@ describe('Moving a note with attachments', () => {
        * ran, in place of the `flushQueue()` the old shape awaited here.
        */
       async function moveNote(): Promise<void> {
-        const probe = await pollInObsidian({
+        let probe: MoveProbe;
+        try {
+          probe = await pollMove();
+        } catch (error) {
+          /*
+           * The one failure seen here (2026-11-07, a desktop aggregate on a machine running five bulk items on two
+           * logical processors) was this poll timing out with no attachment moved, and it did not reproduce. So a
+           * timeout carries what the page looked like at that moment, which is the evidence a recurrence needs.
+           */
+          const stallReport = await describeMoveStall();
+          throw new Error(`${error instanceof Error ? error.message : String(error)}\n${stallReport}`, { cause: error });
+        }
+
+        if (probe.renameError !== null) {
+          throw new Error(`the rename rejected: ${probe.renameError}`);
+        }
+      }
+
+      /**
+       * Fires the rename and polls for the attachments to arrive.
+       *
+       * @returns The last probe, once every attachment arrived or the rename rejected.
+       */
+      async function pollMove(): Promise<MoveProbe> {
+        return await pollInObsidian({
           contextId,
           input: {
             destinationAttachmentFolder: DST_ATTACHMENT_FOLDER,
@@ -430,6 +481,14 @@ describe('Moving a note with attachments', () => {
               throw new Error(`Note ${srcNote} not found.`);
             }
 
+            const renameStartTime = Date.now();
+            const renameLog: string[] = [];
+            context.renameStartTime = renameStartTime;
+            context.renameLog = renameLog;
+            context.renameEventRef = app.vault.on('rename', (file, oldPath) => {
+              renameLog.push(`+${String(Date.now() - renameStartTime)} ms ${oldPath} -> ${file.path}`);
+            });
+
             app.fileManager.renameFile(note, destinationNote).catch((error: unknown) => {
               context.renameError = error instanceof Error ? error.message : String(error);
             });
@@ -438,9 +497,150 @@ describe('Moving a note with attachments', () => {
           timeoutMessage: 'the attachments never finished moving into the destination folder',
           until: (result: MoveProbe): boolean => result.renameError !== null || result.movedAttachmentCount >= attachmentCount
         });
+      }
 
-        if (probe.renameError !== null) {
-          throw new Error(`the rename rejected: ${probe.renameError}`);
+      /**
+       * Describes where the move stood when its poll gave up.
+       *
+       * Says where the note and the attachments are, in the index and on disk, which renames the vault reported
+       * and when, what the handler would read (the vault configs, the plugin settings, whether the plugin is
+       * loaded, and any `Custom Attachment Location` API record another suite left published), whether the
+       * handler's queue drains, and the metadata cache's state. A failure inside it is reported in its place,
+       * so the original timeout still surfaces.
+       *
+       * @returns The report, one line per fact.
+       */
+      async function describeMoveStall(): Promise<string> {
+        try {
+          return await evalInObsidian({
+            async callback({
+              app,
+              context,
+              destinationFolder,
+              lib: { flushQueue },
+              pluginId,
+              queueProbeInMilliseconds,
+              sourcePluginId,
+              srcFolder
+            }): Promise<string> {
+              /*
+               * Under the transport's ~30s per-closure cap, not at it. The only wait is the queue probe, a couple of
+               * seconds, because a queue that is still busy then is all the report needs to say.
+               */
+              const folderLines = [
+                ...await describeFolder(srcFolder),
+                ...await describeFolder(destinationFolder)
+              ];
+              const queueLine = await probeQueue();
+              return [
+                describeRename(),
+                ...folderLines,
+                describeRenameEvents(),
+                describeConfigs(),
+                ...describePlugin(),
+                queueLine,
+                describeCache(),
+                `modal ${document.querySelector('.modal-container')?.textContent ?? 'none'}`
+              ].join('\n');
+
+              function describeRename(): string {
+                const elapsed = context.renameStartTime === undefined ? 'never fired' : `${String(Date.now() - context.renameStartTime)} ms ago`;
+                const outcome = context.renameError === undefined ? 'not rejected' : `rejected: ${context.renameError}`;
+                return `rename fired ${elapsed}, ${outcome}`;
+              }
+
+              async function describeFolder(folder: string): Promise<string[]> {
+                const indexed = app.vault.getFiles()
+                  .filter((file) => file.path.startsWith(`${folder}/`))
+                  .map((file) => file.path.slice(folder.length + 1));
+                const assetsFolder = `${folder}/assets`;
+                let diskLine = `on disk: ${assetsFolder} does not exist`;
+                if (await app.vault.adapter.exists(assetsFolder)) {
+                  const listed = await app.vault.adapter.list(assetsFolder);
+                  diskLine = `on disk in ${assetsFolder}: ${String(listed.files.length)} file(s)`;
+                }
+                return [`indexed under ${folder}: ${String(indexed.length)} [${indexed.join(', ')}]`, diskLine];
+              }
+
+              function describeRenameEvents(): string {
+                const renameLog = context.renameLog ?? [];
+                return `vault rename events: ${String(renameLog.length)} [${renameLog.slice(-10).join('; ')}]`;
+              }
+
+              function describeConfigs(): string {
+                const attachmentFolderPath = String(JSON.stringify(app.vault.getConfig('attachmentFolderPath')));
+                const newLinkFormat = String(JSON.stringify(app.vault.getConfig('newLinkFormat')));
+                const alwaysUpdateLinks = String(JSON.stringify(app.vault.getConfig('alwaysUpdateLinks')));
+                return `vault configs: attachmentFolderPath ${attachmentFolderPath}, newLinkFormat ${newLinkFormat}, alwaysUpdateLinks ${alwaysUpdateLinks}`;
+              }
+
+              function describePlugin(): string[] {
+                const records = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records;
+                const apiRecord = records?.[pluginId]?.find((candidate) => !candidate.isRevoked);
+                const enabledState = app.plugins.enabledPlugins.has(pluginId) ? 'enabled' : 'NOT enabled';
+                const loadedState = app.plugins.getPlugin(pluginId) ? 'loaded' : 'NOT loaded';
+                const settings = apiRecord?.api.getSettings ? String(JSON.stringify(apiRecord.api.getSettings())) : 'unavailable';
+                const sourceRecordCount = records?.[sourcePluginId]?.filter((candidate) => !candidate.isRevoked).length ?? 0;
+                return [
+                  `plugin ${enabledState}, ${loadedState}, API ${apiRecord ? 'published' : 'NOT published'}`,
+                  `plugin settings: ${settings}`,
+                  `unrevoked ${sourcePluginId} API records: ${String(sourceRecordCount)}`
+                ];
+              }
+
+              async function probeQueue(): Promise<string> {
+                const busyLine = `handler queue still busy after ${String(queueProbeInMilliseconds)} ms`;
+                return await Promise.race([
+                  flushQueue().then(() => 'handler queue drains'),
+                  new Promise<string>((resolve) => {
+                    window.setTimeout(() => {
+                      resolve(busyLine);
+                    }, queueProbeInMilliseconds);
+                  })
+                ]);
+              }
+
+              function describeCache(): string {
+                const { fileManager, metadataCache } = app;
+                const cacheState = metadataCache.isCacheClean() ? 'clean' : 'NOT clean';
+                const taskCount = String(metadataCache.inProgressTaskCount);
+                const waiterCount = String(metadataCache.onCleanCacheCallbacks.length);
+                const linkUpdateState = fileManager.inProgressUpdates === null ? 'not running' : 'running';
+                return `metadata cache ${cacheState} (${taskCount} task(s) in progress, ${waiterCount} waiter(s)); link update ${linkUpdateState}`;
+              }
+            },
+            contextId,
+            input: {
+              destinationFolder: DST_FOLDER,
+              pluginId: PLUGIN_ID,
+              queueProbeInMilliseconds: QUEUE_PROBE_IN_MILLISECONDS,
+              sourcePluginId: SOURCE_PLUGIN_ID,
+              srcFolder: SRC_FOLDER
+            }
+          });
+        } catch (error) {
+          return `stall report failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
+      /**
+       * Removes the vault `rename` listener `start` registered, if it got that far.
+       */
+      async function stopRecordingRenames(): Promise<void> {
+        try {
+          await evalInObsidian({
+            callback({ app, context }): void {
+              if (!context.renameEventRef) {
+                return;
+              }
+
+              app.vault.offref(context.renameEventRef);
+              delete context.renameEventRef;
+            },
+            contextId
+          });
+        } catch {
+          // A listener left behind only records; the scenario's own failure is the one to report.
         }
       }
 
