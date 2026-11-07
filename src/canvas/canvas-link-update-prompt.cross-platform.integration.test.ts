@@ -18,14 +18,15 @@ import {
  * With Obsidian's *Automatically update internal links* (`alwaysUpdateLinks`) OFF, which is Obsidian's own default,
  * a canvas link update the handler hands back to Obsidian is applied without Obsidian's *Update links* prompt.
  *
- * The handler rewrites every link of a rename it handles itself, except the ones a canvas holds or targets: those
- * it hands back to Obsidian's native `updateAllLinks`, whose canvas link updater is the one that edits a canvas
- * correctly. With the setting off that call does not update. It opens *Update links - Do you want to update
- * internal links that link to this file?* and awaits an answer. So moving a canvas raised that prompt about the
- * ATTACHMENT the handler moved with it, a file the user never touched, and until somebody answered, the
- * attachment's `renameFile` did not return and every later rename or delete waited behind it in this plugin's
- * serial queue. With `shouldHandleRenames` on, every other link is rewritten without asking, so these are too;
- * see `updateAllLinksWithoutPrompt` in `src/rename-delete-handler/rename-delete-handler-component.ts`.
+ * The handler used to hand every canvas link update back to Obsidian's native `updateAllLinks`. With the setting
+ * off that call does not update. It opens *Update links - Do you want to update internal links that link to this
+ * file?* and awaits an answer. So moving a canvas raised that prompt about the ATTACHMENT the handler moved with
+ * it, a file the user never touched, and until somebody answered, the attachment's `renameFile` did not return
+ * and every later rename or delete waited behind it in this plugin's serial queue. The handler now rewrites a
+ * canvas holder's links itself (`editCanvasBacklinks`), and the links that only TARGET a canvas, still handed
+ * back, are applied without the prompt (`updateAllLinksWithoutPrompt`), both in
+ * `src/rename-delete-handler/rename-delete-handler-component.ts`. The text node pins that the canvas is still
+ * updated, by whichever of the two.
  *
  * The canvas is indexed before the move, the state every real canvas is in, because the prompt only comes when
  * Obsidian's canvas index holds the canvas and so finds the reference to update. The header of
@@ -38,12 +39,21 @@ import {
 const PLUGIN_ID = 'advanced-rename-and-delete-handler';
 const SOURCE_PLUGIN_ID = 'obsidian-custom-attachment-location';
 
+interface CanvasDataLike {
+  readonly nodes: readonly CanvasNodeLike[];
+}
+
+interface CanvasNodeLike {
+  readonly text?: string;
+  readonly type: string;
+}
+
 interface CanvasPromptResult {
   readonly hasAttachmentAtNewPath: boolean;
   readonly hasAttachmentAtOldPath: boolean;
   readonly isAlwaysUpdateLinksOn: boolean;
-  readonly linkUpdateSourcePaths: readonly string[];
   readonly promptTexts: readonly string[];
+  readonly textNodeTargetPath: null | string;
 }
 
 interface MigratableSettingsLike {
@@ -216,24 +226,22 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
           }
         }
 
-        /*
-         * Every source file Obsidian's link update actually rewrites. `fileManager.updateAllLinks` reaches
-         * `metadataCache.updateInternalLinks` only once the update is confirmed, by the setting or by a click, so
-         * the canvas appearing here is the update being APPLIED rather than declined. The canvas's content
-         * cannot show it: Obsidian's canvas updater rewrites text nodes only, and a file node is re-pointed by
-         * the canvas plugin on its own schedule. Shadowed with an own property, which the `finally` removes
-         * again, so the next suite on this shared instance meets the metadata cache untouched.
+        /**
+         * Resolves the moved canvas's text-node embed the way Obsidian does.
+         *
+         * @returns The path the embed resolves to, or `null` when the canvas, the embed or its target is missing.
          */
-        const linkUpdateSourcePaths: string[] = [];
-        const metadataCache = app.metadataCache;
-        const hasOwnUpdateInternalLinks = Object.hasOwn(metadataCache, 'updateInternalLinks');
-        const originalUpdateInternalLinks = metadataCache.updateInternalLinks;
-        Object.assign(metadataCache, {
-          updateInternalLinks(this: unknown, ...updateArguments: Parameters<typeof originalUpdateInternalLinks>): Promise<void> {
-            linkUpdateSourcePaths.push(...updateArguments[0].keys());
-            return originalUpdateInternalLinks.apply(this, updateArguments);
+        async function getTextNodeTargetPath(): Promise<null | string> {
+          const movedCanvas = app.vault.getFileByPath(DST_CANVAS);
+          if (!movedCanvas) {
+            return null;
           }
-        });
+
+          const canvasData = JSON.parse(await app.vault.read(movedCanvas)) as CanvasDataLike;
+          const textNode = canvasData.nodes.find((node) => node.type === 'text');
+          const linkpath = /!\[\[(?<linkpath>[^\]|#]+)/.exec(textNode?.text ?? '')?.groups?.['linkpath'];
+          return linkpath === undefined ? null : app.metadataCache.getFirstLinkpathDest(linkpath, DST_CANVAS)?.path ?? null;
+        }
 
         const originalAttachmentFolderPath = app.vault.getConfig('attachmentFolderPath');
         const originalAlwaysUpdateLinks = app.vault.getConfig('alwaysUpdateLinks');
@@ -272,6 +280,15 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
                     type: 'file',
                     width: 400,
                     x: 0,
+                    y: 0
+                  },
+                  {
+                    height: 100,
+                    id: 'node2',
+                    text: `![[${SRC_ATTACHMENT}]]`,
+                    type: 'text',
+                    width: 200,
+                    x: 500,
                     y: 0
                   }
                 ]
@@ -343,15 +360,10 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
             hasAttachmentAtNewPath: app.vault.getAbstractFileByPath(DST_ATTACHMENT) !== null,
             hasAttachmentAtOldPath: app.vault.getAbstractFileByPath(SRC_ATTACHMENT) !== null,
             isAlwaysUpdateLinksOn: app.vault.getConfig('alwaysUpdateLinks') === true,
-            linkUpdateSourcePaths,
-            promptTexts
+            promptTexts,
+            textNodeTargetPath: await getTextNodeTargetPath()
           };
         } finally {
-          if (hasOwnUpdateInternalLinks) {
-            Object.assign(metadataCache, { updateInternalLinks: originalUpdateInternalLinks });
-          } else {
-            Reflect.deleteProperty(metadataCache, 'updateInternalLinks');
-          }
           /*
            * The settings dialog `applySettings` looks for must not be mistaken for a prompt still animating out,
            * or for the next prompt, which dismissing the one before it lets the held move reach.
@@ -401,7 +413,7 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
     // No prompt, about the canvas the user moved or the attachment the handler moved with it.
     expect(result.promptTexts).toEqual([]);
 
-    // And Obsidian still applied the canvas's link update: the prompt was answered, not the update declined.
-    expect(result.linkUpdateSourcePaths).toContain('rdh-canvas-prompt-dst/board.canvas');
+    // And the canvas's text-node embed was still updated: no prompt, and no update declined either.
+    expect(result.textNodeTargetPath).toBe('rdh-canvas-prompt-dst/assets/img.png');
   });
 });

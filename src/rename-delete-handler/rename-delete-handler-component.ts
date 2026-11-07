@@ -6,7 +6,9 @@
 
 import type { AbortSignalComponent } from '@mnaoumov/obsidian-lib/components/abort-signal-component';
 import type { PluginNoticeComponent } from '@mnaoumov/obsidian-lib/components/plugin-notice-component';
+import type { FileChange } from '@mnaoumov/obsidian-lib/file-change';
 import type {
+  BacklinkConversionParams,
   EditBacklinksSnapshotParams,
   UpdateLinkParams,
   UpdateReferencesInFileParams
@@ -40,6 +42,7 @@ import { iterateReferencesAffectedByRename } from '@mnaoumov/obsidian-lib/backli
 import { getCanvasReferences } from '@mnaoumov/obsidian-lib/canvas';
 import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import { MonkeyAroundComponent } from '@mnaoumov/obsidian-lib/components/monkey-around-component';
+import { applyFileChanges } from '@mnaoumov/obsidian-lib/file-change';
 import { waitForPendingLinkUpdates } from '@mnaoumov/obsidian-lib/file-manager';
 import {
   CANVAS_FILE_EXTENSION,
@@ -74,6 +77,10 @@ import {
   addToQueue,
   flushQueue
 } from '@mnaoumov/obsidian-lib/queue';
+import {
+  isCanvasTextNodeReference,
+  referenceToFileChange
+} from '@mnaoumov/obsidian-lib/reference';
 import { isResourceLockedForPathByAncestor } from '@mnaoumov/obsidian-lib/resource-lock';
 import {
   cleanupEmptyFolders,
@@ -264,6 +271,16 @@ interface DidRescueStillUsedAttachmentParams {
   readonly rescueParams: RescueStillUsedFileParams;
   readonly rootFolderPath: string;
   readonly settingsManager: SettingsManager;
+}
+
+interface EditCanvasBacklinksParams {
+  readonly abortSignal: AbortSignal;
+  readonly app: App;
+  readonly canvasPath: string;
+  readonly linkKeyToPathMap: Map<string, string>;
+  readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly referenceConverter: (params: BacklinkConversionParams<string>) => string | undefined;
+  readonly resourceLockComponent: null | ResourceLockComponent;
 }
 
 interface EditRenameBacklinksParams {
@@ -1003,8 +1020,8 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * With `alwaysUpdateLinks` off (Obsidian's default), `updateAllLinks` does not update. It opens a confirmation
    * and awaits it, so a move this handler made, such as an attachment that a canvas embeds, asked about a file the
    * user never moved, and this plugin's serial queue waited behind the answer. With `shouldHandleRenames` on, the
-   * handler already rewrites every other link without asking. The canvas entries go back to Obsidian only
-   * because its canvas link updater is the one that edits a canvas correctly, so they get the same treatment.
+   * handler already rewrites every other link without asking, so these get the same treatment. Only the entries
+   * whose target is a canvas come here: a canvas that holds a link is rewritten by `editCanvasBacklinks`.
    *
    * In the 1.14.2 bundle `updateAllLinks` reads the setting synchronously, before its first `await`, so it
    * answers `true` only while that synchronous part runs, and no other reader in the app sees the change. If a
@@ -1164,11 +1181,18 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
           return true;
         }
 
-        if (!this.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas) || hasBacklinkCachePlugin(this.app)) {
+        /*
+         * A canvas holding the link is rewritten by the handler itself, in `editCanvasBacklinks`. Obsidian's canvas
+         * updater would apply this rename's offsets to a text node an earlier rename has already rewritten.
+         */
+        if (
+          !this.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas) || hasBacklinkCachePlugin(this.app)
+          || linkUpdate.sourceFile.extension === CANVAS_FILE_EXTENSION
+        ) {
           return false;
         }
 
-        if (linkUpdate.sourceFile.extension === CANVAS_FILE_EXTENSION || linkUpdate.resolvedFile.extension === CANVAS_FILE_EXTENSION) {
+        if (linkUpdate.resolvedFile.extension === CANVAS_FILE_EXTENSION) {
           // Still Obsidian's to apply, but without its prompt: see `updateAllLinksWithoutPrompt`.
           unpromptedLinkUpdates.push(linkUpdate);
         }
@@ -2456,6 +2480,77 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
 }
 
 /**
+ * Rewrites, in one canvas, the text-node links its snapshot names, in a single write.
+ *
+ * The library's `editBacklinksSnapshot` reads a holder's links from the metadata cache, which holds none for a
+ * canvas, so it rewrites nothing there. Handing the canvas back to Obsidian's own canvas link updater instead
+ * breaks a text node that embeds several renamed files: that updater applies each rename's offsets, taken from
+ * its canvas index when the rename started, to the text as it is now. When one note rename moves several
+ * attachments, the index has not re-read the canvas between them, so every rewrite after the first in a node
+ * lands where the previous one shifted the text, and tables and links break (issue #10). This reads the links
+ * from the content it rewrites, so every offset is current, and applies them all at once.
+ *
+ * File nodes are left alone: Obsidian's canvas plugin re-points a file node at a moved file by itself, and a
+ * file node that already moved would make the library refuse the whole rewrite as a content mismatch.
+ *
+ * @param params - The canvas, the links to rewrite in it, and how to rewrite each one.
+ */
+async function editCanvasBacklinks(params: EditCanvasBacklinksParams): Promise<void> {
+  const { app, canvasPath, linkKeyToPathMap, referenceConverter } = params;
+  /*
+   * The library re-serializes a canvas whenever it applies changes, even none, so a canvas whose text nodes hold
+   * none of the snapshot's links is not opened at all.
+   */
+  const initialReferences = await getCanvasReferences(app, canvasPath);
+  if (initialReferences.every((reference) => !isCanvasTextNodeReference(reference) || !linkKeyToPathMap.has(getLinkIdentityKey(reference)))) {
+    return;
+  }
+
+  await applyFileChanges({
+    abortSignal: params.abortSignal,
+    app,
+    async changesProvider({ abortSignal, content }): Promise<FileChange[] | null> {
+      const file = getFileOrNull({ app, pathOrFile: canvasPath });
+      if (!file) {
+        return [];
+      }
+
+      // The references are read from the file, so they describe `content` only while the two agree. A `null` retries.
+      if (await app.vault.cachedRead(file) !== content) {
+        return null;
+      }
+
+      const references = await getCanvasReferences(app, file);
+      abortSignal.throwIfAborted();
+      const changes: FileChange[] = [];
+      for (const reference of references) {
+        if (!isCanvasTextNodeReference(reference)) {
+          continue;
+        }
+
+        const newContent = referenceConverter({
+          payload: linkKeyToPathMap.get(getLinkIdentityKey(reference)),
+          reference,
+          sourcePath: canvasPath
+        });
+        abortSignal.throwIfAborted();
+        if (newContent === undefined) {
+          continue;
+        }
+
+        changes.push(referenceToFileChange(reference, newContent));
+      }
+
+      return changes;
+    },
+    pathOrFile: canvasPath,
+    pluginNoticeComponent: params.pluginNoticeComponent,
+    resourceLockComponent: params.resourceLockComponent,
+    shouldFailOnMissingFile: false
+  });
+}
+
+/**
  * Rewrites, in each linking note of `snapshot`, the links that pointed at a renamed file, so they point at its new
  * path. Used per rename, and once for a whole batch ({@link BacklinkBatch}).
  *
@@ -2465,48 +2560,73 @@ async function editRenameBacklinks(params: EditRenameBacklinksParams): Promise<v
   const renamedFilePaths = getObsidianLibState('renamedFilePaths', new Set<string>()).value;
   const renamedLinks = getObsidianLibState('renamedLinkPaths', new Set<string>()).value;
   const linkIndexes = new Map<string, number>();
+  const canvasSnapshot = new Map<string, Map<string, string>>();
+  const noteSnapshot = new Map<string, Map<string, string>>();
+  for (const [backlinkPath, linkKeyToPathMap] of params.snapshot) {
+    (isCanvasFile(backlinkPath) ? canvasSnapshot : noteSnapshot).set(backlinkPath, linkKeyToPathMap);
+  }
+
   await editBacklinksSnapshot(normalizeOptionalProperties<EditBacklinksSnapshotParams<string>>({
     abortSignal: params.abortSignal,
     app: params.app,
     linkUpdateProgressReporter: params.linkUpdateProgressReporter ?? undefined,
     pluginNoticeComponent: params.pluginNoticeComponent,
-    referenceConverter: ({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }) => {
-      const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
-      linkIndexes.set(newBacklinkPath, linkIndex);
-
-      if (!oldAttachmentPath) {
-        /*
-         * A link that is not in the snapshot was either never ours to rewrite, or was already
-         * rewritten by someone else (leaving it correct). Either way there is nothing to do -
-         * but log it, because a silent skip here is exactly how
-         * https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/60 stayed
-         * invisible: every skipped link left a broken embed and reported nothing.
-         */
-        getLibDebugger('RenameDeleteHandler:updateBacklinks')(
-          `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
-        );
-        return;
-      }
-
-      renamedFilePaths.add(newBacklinkPath);
-      renamedLinks.add(`${newBacklinkPath}//${String(linkIndex)}`);
-
-      return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
-        app: params.app,
-        newSourcePathOrFile: newBacklinkPath,
-        newTargetPathOrFile: params.getNewTargetPath(oldAttachmentPath),
-        oldTargetPathOrFile: oldAttachmentPath,
-        reference,
-        shouldUpdateFileNameAlias: params.shouldUpdateFileNameAliases
-      }));
-    },
+    referenceConverter,
     referenceIdentityKeyProvider: getLinkIdentityKey,
     resourceLockComponent: params.resourceLockComponent,
     shouldFailOnMissingFile: false,
     // The converter logs every link it declines, so it has to be shown the ones the snapshot does not name.
     shouldVisitUnmatchedReferences: true,
-    snapshot: params.snapshot
+    snapshot: noteSnapshot
   }));
+
+  if (canvasSnapshot.size === 0 || !params.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas)) {
+    return;
+  }
+
+  // TODO: Pass canvases to `editBacklinksSnapshot` too, once `@mnaoumov/obsidian-lib` reads a canvas holder's links in `editReferences`.
+  for (const [canvasPath, linkKeyToPathMap] of canvasSnapshot) {
+    await editCanvasBacklinks({
+      abortSignal: params.abortSignal,
+      app: params.app,
+      canvasPath,
+      linkKeyToPathMap,
+      pluginNoticeComponent: params.pluginNoticeComponent,
+      referenceConverter,
+      resourceLockComponent: params.resourceLockComponent
+    });
+  }
+
+  function referenceConverter({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }: BacklinkConversionParams<string>): string | undefined {
+    const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
+    linkIndexes.set(newBacklinkPath, linkIndex);
+
+    if (!oldAttachmentPath) {
+      /*
+       * A link that is not in the snapshot was either never ours to rewrite, or was already
+       * rewritten by someone else (leaving it correct). Either way there is nothing to do -
+       * but log it, because a silent skip here is exactly how
+       * https://github.com/mnaoumov/obsidian-custom-attachment-location/issues/60 stayed
+       * invisible: every skipped link left a broken embed and reported nothing.
+       */
+      getLibDebugger('RenameDeleteHandler:updateBacklinks')(
+        `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
+      );
+      return;
+    }
+
+    renamedFilePaths.add(newBacklinkPath);
+    renamedLinks.add(`${newBacklinkPath}//${String(linkIndex)}`);
+
+    return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
+      app: params.app,
+      newSourcePathOrFile: newBacklinkPath,
+      newTargetPathOrFile: params.getNewTargetPath(oldAttachmentPath),
+      oldTargetPathOrFile: oldAttachmentPath,
+      reference,
+      shouldUpdateFileNameAlias: params.shouldUpdateFileNameAliases
+    }));
+  }
 }
 
 /**
