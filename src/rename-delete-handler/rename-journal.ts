@@ -47,6 +47,16 @@ export interface RenameJournalCursor {
    * @returns A new map, keyed by current paths.
    */
   readonly resolveKeys: <T>(map: ReadonlyMap<string, T>, merge: (this: void, existing: T, added: T) => void) => Map<string, T>;
+
+  /**
+   * Follows a path no file holds, such as the path a renamed note left, through the renames of the folders above
+   * it recorded since the cursor was taken or last advanced. A rename of the path itself is not followed: the
+   * file that left it is not the file that moves out of it later.
+   *
+   * @param path - A vacated path at the cursor's point.
+   * @returns Where that path would be now.
+   */
+  readonly resolveVacatedPath: (path: string) => string;
 }
 
 interface JournalEntry {
@@ -116,7 +126,8 @@ export class RenameJournal {
           }
         }
         return resolved;
-      }
+      },
+      resolveVacatedPath: (path: string): string => this.resolveVacatedPathFrom(path, sequence)
     };
   }
 
@@ -149,6 +160,16 @@ export class RenameJournal {
     for (const entry of this.entries) {
       if (entry.sequence > sequence && entry.oldPath === current) {
         current = entry.newPath;
+      }
+    }
+    return current;
+  }
+
+  private resolveVacatedPathFrom(path: string, sequence: number): string {
+    let current = path;
+    for (const entry of this.entries) {
+      if (entry.sequence > sequence && current.startsWith(`${entry.oldPath}/`)) {
+        current = entry.newPath + current.slice(entry.oldPath.length);
       }
     }
     return current;
