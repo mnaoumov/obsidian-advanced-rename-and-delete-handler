@@ -357,6 +357,7 @@ interface RenameHandlerConstructorParams {
   readonly oldPathBacklinksMap: Map<string, Reference[]>;
   readonly pluginNoticeComponent: PluginNoticeComponent;
   readonly renameJournalCursor: RenameJournalCursor;
+  readonly renameOriginCursor: RenameJournalCursor;
   readonly resourceLockComponent: null | ResourceLockComponent;
   readonly settingsManager: SettingsManager;
 }
@@ -367,6 +368,7 @@ interface RenameMapConstructorParams {
   readonly newPath: string;
   readonly oldCache: CachedMetadata | null;
   readonly oldPath: string;
+  readonly renameOriginCursor: RenameJournalCursor;
   readonly settingsManager: SettingsManager;
 }
 
@@ -1276,6 +1278,7 @@ class RenameHandler {
   private oldPathBacklinksMap: Map<string, Reference[]>;
   private readonly pluginNoticeComponent: PluginNoticeComponent;
   private readonly renameJournalCursor: RenameJournalCursor;
+  private readonly renameOriginCursor: RenameJournalCursor;
   private readonly resourceLockComponent: null | ResourceLockComponent;
   private readonly settingsManager: SettingsManager;
 
@@ -1294,6 +1297,7 @@ class RenameHandler {
     this.oldPathBacklinksMap = params.oldPathBacklinksMap;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
     this.renameJournalCursor = params.renameJournalCursor;
+    this.renameOriginCursor = params.renameOriginCursor;
     this.settingsManager = params.settingsManager;
   }
 
@@ -1342,6 +1346,7 @@ class RenameHandler {
         newPath: this.newPath,
         oldCache: this.oldCache,
         oldPath: this.oldPath,
+        renameOriginCursor: this.renameOriginCursor,
         settingsManager: this.settingsManager
       });
       await renameMap.fill();
@@ -1516,6 +1521,7 @@ class RenameHandler {
         oldPathBacklinksMap: this.oldPathBacklinksMap,
         pluginNoticeComponent: this.pluginNoticeComponent,
         renameJournalCursor: this.renameJournalCursor,
+        renameOriginCursor: this.renameOriginCursor,
         resourceLockComponent: this.resourceLockComponent,
         settingsManager: this.settingsManager
       }).handle();
@@ -1543,6 +1549,7 @@ class RenameHandler {
       oldPathBacklinksMap: this.oldPathBacklinksMap,
       pluginNoticeComponent: this.pluginNoticeComponent,
       renameJournalCursor: this.renameJournalCursor,
+      renameOriginCursor: this.renameOriginCursor,
       resourceLockComponent: this.resourceLockComponent,
       settingsManager: this.settingsManager
     }).handle();
@@ -1603,12 +1610,23 @@ class RenameHandler {
 class RenameMap {
   private readonly abortSignal: AbortSignal;
   private readonly app: App;
+  /**
+   * Where the renamed note is when the attachments are moved. It differs from `newPath` when the note, or a folder above
+   * it, was renamed again after this rename, as `Folder notes` does to a folder note's folder (issue #11).
+   */
+  private currentNewPath: string;
   private readonly map = new Map<string, string>();
   private readonly newPath: string;
   private readonly oldCache: CachedMetadata | null;
   private readonly oldPath: string;
   private readonly oldPathLinks: Reference[];
+  private readonly renameOriginCursor: RenameJournalCursor;
   private readonly settingsManager: SettingsManager;
+  /**
+   * Where `oldPath` would be now: a folder above it renamed after this rename takes the note's old attachment folder
+   * along, so that folder, and the note's relative links, are read from here.
+   */
+  private vacatedOldPath: string;
 
   public constructor(params: RenameMapConstructorParams) {
     this.abortSignal = params.abortSignal;
@@ -1617,6 +1635,9 @@ class RenameMap {
     this.oldCache = params.oldCache;
     this.oldPath = params.oldPath;
     this.newPath = params.newPath;
+    this.renameOriginCursor = params.renameOriginCursor;
+    this.currentNewPath = params.newPath;
+    this.vacatedOldPath = params.oldPath;
     this.oldPathLinks = this.oldCache ? getReferences({ cache: this.oldCache }) : [];
   }
 
@@ -1632,25 +1653,27 @@ class RenameMap {
       return;
     }
 
+    this.followLaterRenames();
+
     // Obsidian does not index a canvas file into the metadata cache.
     // The cache-derived `oldPathLinks` is empty for a canvas, hiding its embedded attachments.
     // Reading the canvas references directly moves them with the canvas (mirroring note behavior).
     // The file already lives at the new path after the rename, so read the references from there.
     if (isCanvasFile(this.oldPath)) {
-      const canvasReferences = await getCanvasReferences(this.app, this.newPath);
+      const canvasReferences = await getCanvasReferences(this.app, this.currentNewPath);
       this.oldPathLinks.push(...canvasReferences);
     }
 
     const settings = this.settingsManager.getSettings();
 
-    const oldFile = getFile({ app: this.app, pathOrFile: this.oldPath, shouldIncludeNonExisting: true });
+    const oldFile = getFile({ app: this.app, pathOrFile: this.vacatedOldPath, shouldIncludeNonExisting: true });
     const oldAttachmentFolderPath = await this.getOldAttachmentFolderPath(oldFile);
 
     const newAttachmentFolderPath = settings.shouldRenameAttachmentFolder
       ? await getAttachmentFolderPath({
         app: this.app,
         context: AttachmentPathContext.RenameNote,
-        notePathOrFile: this.newPath
+        notePathOrFile: this.currentNewPath
       })
       : oldAttachmentFolderPath;
 
@@ -1672,7 +1695,7 @@ class RenameMap {
       await hasOwnAttachmentFolder({
         app: this.app,
         context: AttachmentPathContext.RenameNote,
-        path: this.oldPath
+        path: this.vacatedOldPath
       })
     ) {
       Vault.recurseChildren(oldAttachmentFolder, (oldAttachmentFile) => {
@@ -1684,7 +1707,7 @@ class RenameMap {
     } else {
       for (const oldPathLink of this.oldPathLinks) {
         this.abortSignal.throwIfAborted();
-        const oldAttachmentFile = extractReferenceFile({ app: this.app, reference: oldPathLink, sourcePathOrFile: this.oldPath });
+        const oldAttachmentFile = extractReferenceFile({ app: this.app, reference: oldPathLink, sourcePathOrFile: this.vacatedOldPath });
         if (!oldAttachmentFile) {
           continue;
         }
@@ -1710,9 +1733,9 @@ class RenameMap {
         newAttachmentFilePath = await getAttachmentFilePath({
           app: this.app,
           context: AttachmentPathContext.RenameNote,
-          notePathOrFile: this.newPath,
+          notePathOrFile: this.currentNewPath,
           oldAttachmentPathOrFile: oldAttachmentFile,
-          oldNotePathOrFile: this.oldPath,
+          oldNotePathOrFile: this.vacatedOldPath,
           shouldSkipDuplicateCheck: true
         });
         this.abortSignal.throwIfAborted();
@@ -1808,6 +1831,8 @@ class RenameMap {
     const linkerPaths = new Set<string>(backlinks.keys());
     linkerPaths.delete(this.oldPath);
     linkerPaths.delete(this.newPath);
+    linkerPaths.delete(this.vacatedOldPath);
+    linkerPaths.delete(this.currentNewPath);
     if (linkerPaths.size === 0) {
       return true;
     }
@@ -1831,6 +1856,16 @@ class RenameMap {
     return true;
   }
 
+  private followLaterRenames(): void {
+    this.currentNewPath = this.renameOriginCursor.resolve(this.newPath);
+    this.vacatedOldPath = this.renameOriginCursor.resolveVacatedPath(this.oldPath);
+    if (this.currentNewPath !== this.newPath || this.vacatedOldPath !== this.oldPath) {
+      getLibDebugger('RenameDeleteHandler:fillRenameMap')(
+        `Moving the attachments of ${this.oldPath} -> ${this.newPath} as ${this.vacatedOldPath} -> ${this.currentNewPath}, where later renames put them.`
+      );
+    }
+  }
+
   private async getOldAttachmentFolderPath(oldFile: TFile): Promise<string> {
     using _registration = registerFiles(this.app, [oldFile]);
     using _cacheRegistration = this.oldCache && oldFile.deleted
@@ -1839,7 +1874,7 @@ class RenameMap {
     return await getAttachmentFolderPath({
       app: this.app,
       context: AttachmentPathContext.RenameNote,
-      notePathOrFile: this.oldPath
+      notePathOrFile: this.vacatedOldPath
     });
   }
 }
@@ -2297,6 +2332,11 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
     const oldPathBacklinksMap = getBacklinksForFileOrPath(this.app, oldPath).data;
     // Taken with the capture above, so the job can follow a linking note renamed before it gets to run.
     const renameJournalCursor = this.renameJournal.openCursor();
+    /*
+     * Never advanced, so the attachment move can follow the note and the folder it left through every rename since
+     * this one, such as `Folder notes` renaming the note's folder from this very event (issue #11).
+     */
+    const renameOriginCursor = this.renameJournal.openCursor();
     addToQueue({
       abortSignal: this.abortSignalComponent.abortSignal,
       operationFunction: async (abortSignal) => {
@@ -2314,11 +2354,13 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
             oldPathBacklinksMap,
             pluginNoticeComponent: this.pluginNoticeComponent,
             renameJournalCursor,
+            renameOriginCursor,
             resourceLockComponent: this.resourceLockComponent,
             settingsManager: this.settingsManager
           }).handle();
         } finally {
           renameJournalCursor.dispose();
+          renameOriginCursor.dispose();
         }
       },
       operationName: `Handle rename: ${oldPath} -> ${newPath}`

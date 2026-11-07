@@ -98,6 +98,19 @@ describe('RenameJournal', () => {
     expect(journal.size).toBe(1);
   });
 
+  it('should follow a vacated path through later renames of the folders above it, and not through its own', () => {
+    const journal = new RenameJournal();
+    const cursor = journal.openCursor();
+    journal.record('d/d-Index.md', 'd/other.md');
+    journal.record('d', 'e');
+    journal.record('e/_resources', 'e/res');
+    journal.record('x', 'y');
+    expect(cursor.resolveVacatedPath('d/d-Index.md')).toBe('e/d-Index.md');
+    expect(cursor.resolveVacatedPath('d/_resources/d-Index')).toBe('e/res/d-Index');
+    expect(cursor.resolveVacatedPath('dd/x.md')).toBe('dd/x.md');
+    expect(cursor.resolve('d/gone.md')).toBe('d/gone.md');
+  });
+
   it('should re-key a map by current paths and merge keys that now name one file', () => {
     const journal = new RenameJournal();
     const cursor = journal.openCursor();
