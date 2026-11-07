@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 3.5.0
+
+Other plugins can now observe bulk moves, and a failed batch no longer leaves links broken.
+
+### New
+
+- Plugin API contract 1.4.0 adds `subscribeBulkOperations`: start and end notifications around `moveMany` and `runInBatch`, including failed ones. The end notification waits for queued rename work and metadata parsing. A subscriber can unsubscribe at any time, provider reload clears subscriptions, and an observer's error never interrupts a move.
+
+### Fixed
+
+- When a `runInBatch` callback throws, the renames it already made are finished first: queued handlers drain, held backlinks are rewritten and moved notes' links are repaired, and only then is the original error rethrown.
+
+### Documentation
+
+- Issue attachments are optional and strongly encouraged, and the README links to the Obsidian resources page.
+
 ## 3.4.0
 
 - fix(api): find moveMany's affected notes through the backlink index
