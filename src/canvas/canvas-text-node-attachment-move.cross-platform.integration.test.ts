@@ -130,12 +130,16 @@ describe('Moving a canvas whose text node embeds its attachment', () => {
         /*
          * Under the transport's ~30s per-closure cap, not at it. `applySettings` is charged twice, at the
          * start and in the `finally`, and with {@link INDEX_TIMEOUT_IN_MILLISECONDS} and the two
-         * {@link EFFECT_TIMEOUT_IN_MILLISECONDS} waits that makes 24 000 ms in total. Everything waited on here
+         * {@link EFFECT_TIMEOUT_IN_MILLISECONDS} waits that makes 27 000 ms in total. Everything waited on here
          * lands in well under a second once the handler works.
          */
         const WAIT_TIMEOUT_IN_MILLISECONDS = 5000;
-        // Measured at 50-160 ms from the canvas's creation to its entry in Obsidian's canvas index.
-        const INDEX_TIMEOUT_IN_MILLISECONDS = 2000;
+        /*
+         * 7-39 ms from the canvas's creation to its entry in Obsidian's canvas index, measured alone at 100 % CPU
+         * (2026-11-07). A loaded desktop aggregate in the after-layout-ready project missed a 2 s budget here, so
+         * the budget is 5 s.
+         */
+        const INDEX_TIMEOUT_IN_MILLISECONDS = 5000;
         const EFFECT_TIMEOUT_IN_MILLISECONDS = 6000;
 
         const apiRecord = (window as PluginApiRegistryHostLike).__obsidianLib?.pluginApiRegistry?.value?.records?.[pluginId]

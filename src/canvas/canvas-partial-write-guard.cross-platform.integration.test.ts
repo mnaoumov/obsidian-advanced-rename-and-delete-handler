@@ -161,14 +161,18 @@ describe('Moving a partial canvas', () => {
          * is killed at the cap first and reported as a bare transport timeout naming the harness rather than
          * the wait that actually overran. A helper's budget is charged once per CALL SITE, so this one is
          * charged twice — `applySettings` runs at the start and again in the `finally` — which with
-         * {@link INDEX_TIMEOUT_IN_MILLISECONDS} and {@link EFFECT_TIMEOUT_IN_MILLISECONDS} makes 28 000 ms in
+         * {@link INDEX_TIMEOUT_IN_MILLISECONDS} and {@link EFFECT_TIMEOUT_IN_MILLISECONDS} makes 27 000 ms in
          * total. What is waited on here lands in well under a second, so a budget this size costs nothing — a
          * wait that can genuinely run long belongs in `pollInObsidian`, with Node doing the waiting, as the two
          * note-move suites here now do.
          */
-        const WAIT_TIMEOUT_IN_MILLISECONDS = 9000;
-        // Measured at 50-160 ms from the canvas's creation to its entry in Obsidian's canvas index.
-        const INDEX_TIMEOUT_IN_MILLISECONDS = 2000;
+        const WAIT_TIMEOUT_IN_MILLISECONDS = 7000;
+        /*
+         * 7-39 ms from the canvas's creation to its entry in Obsidian's canvas index, measured alone at 100 % CPU
+         * (2026-11-07). A loaded desktop aggregate in the after-layout-ready project missed a 2 s budget here, so
+         * the budget is 5 s.
+         */
+        const INDEX_TIMEOUT_IN_MILLISECONDS = 5000;
         // Shorter than the project's own test timeout, so a missing effect is reported by an assertion rather than by vitest.
         const EFFECT_TIMEOUT_IN_MILLISECONDS = 8000;
 

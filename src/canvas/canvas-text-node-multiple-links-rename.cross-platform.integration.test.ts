@@ -69,9 +69,10 @@ describe('Renaming a canvas whose text nodes embed several attachments', () => {
   it('renames the attachments and rewrites every embed without breaking the text', async () => {
     const result = await evalInObsidian({
       async callback({ app, lib: { castTo, ComponentEx, flushQueue, publishPluginApi, waitUntil } }): Promise<CanvasRenameResult> {
-        // Under the transport's ~30s per-closure cap, not at it: two waits of 8 000 ms and one of 2 000 ms.
+        // Under the transport's ~30s per-closure cap, not at it: two waits of 8 000 ms and one of 5 000 ms.
         const WAIT_TIMEOUT_IN_MILLISECONDS = 8000;
-        const INDEX_TIMEOUT_IN_MILLISECONDS = 2000;
+        // A loaded desktop aggregate in the after-layout-ready project missed a 2 s budget for the canvas index.
+        const INDEX_TIMEOUT_IN_MILLISECONDS = 5000;
         const root = `rdh-canvas-multiple-links-${Date.now().toString()}`;
         const oldCanvasPath = `${root}/canvas.canvas`;
         const newCanvasPath = `${root}/board.canvas`;

@@ -137,11 +137,15 @@ describe('Moving a canvas with alwaysUpdateLinks off', () => {
          * Under the transport's ~30s per-closure cap, not at it. `applySettings` is charged twice, at the
          * start and in the `finally`, and with {@link INDEX_TIMEOUT_IN_MILLISECONDS}, the two
          * {@link EFFECT_TIMEOUT_IN_MILLISECONDS} waits and {@link CLOSE_TIMEOUT_IN_MILLISECONDS} that makes
-         * 26 000 ms in total. Everything waited on here lands in well under a second.
+         * 29 000 ms in total. Everything waited on here lands in well under a second.
          */
         const WAIT_TIMEOUT_IN_MILLISECONDS = 5000;
-        // Measured at 50-160 ms from the canvas's creation to its entry in Obsidian's canvas index.
-        const INDEX_TIMEOUT_IN_MILLISECONDS = 2000;
+        /*
+         * 7-39 ms from the canvas's creation to its entry in Obsidian's canvas index, measured alone at 100 % CPU
+         * (2026-11-07). A loaded desktop aggregate in the after-layout-ready project missed a 2 s budget here, so
+         * the budget is 5 s.
+         */
+        const INDEX_TIMEOUT_IN_MILLISECONDS = 5000;
         const EFFECT_TIMEOUT_IN_MILLISECONDS = 6000;
         // A modal's close animation, which takes a few hundred milliseconds.
         const CLOSE_TIMEOUT_IN_MILLISECONDS = 2000;
