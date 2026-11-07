@@ -111,10 +111,15 @@ import {
 } from 'obsidian';
 
 import type { UnitFolderMove } from '../rescue/unit-folder-rescue.ts';
+import type { RenameJournalCursor } from './rename-journal.ts';
 
 import { RescueDecisionScope } from '../rescue/rescue-decision-scope.ts';
 import { planUnitFolderMove } from '../rescue/unit-folder-rescue.ts';
 import { pluralize } from './pluralize.ts';
+import {
+  mergeMissingEntries,
+  RenameJournal
+} from './rename-journal.ts';
 
 /**
  * Parameters for {@link RenameDeleteHandlerSettings.getRescuePath}.
@@ -334,6 +339,7 @@ interface RenameHandlerConstructorParams {
   readonly oldPath: string;
   readonly oldPathBacklinksMap: Map<string, Reference[]>;
   readonly pluginNoticeComponent: PluginNoticeComponent;
+  readonly renameJournalCursor: RenameJournalCursor;
   readonly resourceLockComponent: null | ResourceLockComponent;
   readonly settingsManager: SettingsManager;
 }
@@ -1243,8 +1249,9 @@ class RenameHandler {
   private readonly newPath: string;
   private readonly oldCache: CachedMetadata | null;
   private readonly oldPath: string;
-  private readonly oldPathBacklinksMap: Map<string, Reference[]>;
+  private oldPathBacklinksMap: Map<string, Reference[]>;
   private readonly pluginNoticeComponent: PluginNoticeComponent;
+  private readonly renameJournalCursor: RenameJournalCursor;
   private readonly resourceLockComponent: null | ResourceLockComponent;
   private readonly settingsManager: SettingsManager;
 
@@ -1262,6 +1269,7 @@ class RenameHandler {
     this.oldPath = params.oldPath;
     this.oldPathBacklinksMap = params.oldPathBacklinksMap;
     this.pluginNoticeComponent = params.pluginNoticeComponent;
+    this.renameJournalCursor = params.renameJournalCursor;
     this.settingsManager = params.settingsManager;
   }
 
@@ -1394,7 +1402,7 @@ class RenameHandler {
       }
 
       if (this.backlinkBatch) {
-        this.backlinkBatch.add(combinedBacklinksMap);
+        this.backlinkBatch.add(this.renameJournalCursor.resolveKeys(combinedBacklinksMap, mergeMissingEntries));
       } else {
         await editRenameBacklinks({
           abortSignal: this.abortSignal,
@@ -1404,7 +1412,8 @@ class RenameHandler {
           pluginNoticeComponent,
           resourceLockComponent: this.resourceLockComponent,
           shouldUpdateFileNameAliases: settings.shouldUpdateFileNameAliases,
-          snapshot: combinedBacklinksMap
+          // A linking note renamed while this job ran is rewritten where it is now, not skipped at the path it left.
+          snapshot: this.renameJournalCursor.resolveKeys(combinedBacklinksMap, mergeMissingEntries)
         });
         this.abortSignal.throwIfAborted();
       }
@@ -1482,6 +1491,7 @@ class RenameHandler {
         oldPath: interruptedRename.oldPath,
         oldPathBacklinksMap: this.oldPathBacklinksMap,
         pluginNoticeComponent: this.pluginNoticeComponent,
+        renameJournalCursor: this.renameJournalCursor,
         resourceLockComponent: this.resourceLockComponent,
         settingsManager: this.settingsManager
       }).handle();
@@ -1508,6 +1518,7 @@ class RenameHandler {
       oldPath: this.oldPath,
       oldPathBacklinksMap: this.oldPathBacklinksMap,
       pluginNoticeComponent: this.pluginNoticeComponent,
+      renameJournalCursor: this.renameJournalCursor,
       resourceLockComponent: this.resourceLockComponent,
       settingsManager: this.settingsManager
     }).handle();
@@ -1517,6 +1528,19 @@ class RenameHandler {
   }
 
   private async refreshLinks(): Promise<void> {
+    /*
+     * The backlinks captured in the `rename` event name each linking note by the path it had then. A linking note
+     * renamed since is followed to where it is now before the refreshed backlinks, which use current paths, join them.
+     */
+    this.oldPathBacklinksMap = this.renameJournalCursor.resolveKeys(this.oldPathBacklinksMap, (existing, added) => {
+      for (const link of added) {
+        if (!existing.includes(link)) {
+          existing.push(link);
+        }
+      }
+    });
+    this.renameJournalCursor.advance();
+
     const fakeOldFile = getFile({ app: this.app, pathOrFile: this.oldPath, shouldIncludeNonExisting: true });
     let oldPathBacklinksMapRefreshed: Map<string, Reference[]>;
     {
@@ -1876,11 +1900,12 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
   private readonly handledRenames = new HandledRenames();
 
   private readonly interruptedRenamesMap = new Map<string, InterruptedRename[]>();
-
   /**
    * Set while {@link moveMany} renames files, whose links it rewrites itself afterwards.
    */
   private isMovingMany = false;
+
+  private readonly renameJournal = new RenameJournal();
 
   private readonly rescueDecisionScope = new RescueDecisionScope();
 
@@ -2179,6 +2204,8 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
   }
 
   private handleRename(file: TAbstractFile, oldPath: string): void {
+    // Before every early return: a queued job may still name this file by the path it just left.
+    this.renameJournal.record(oldPath, file.path);
     if (this.isMovingMany) {
       return;
     }
@@ -2244,24 +2271,32 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
      * notes that could link here.
      */
     const oldPathBacklinksMap = getBacklinksForFileOrPath(this.app, oldPath).data;
+    // Taken with the capture above, so the job can follow a linking note renamed before it gets to run.
+    const renameJournalCursor = this.renameJournal.openCursor();
     addToQueue({
       abortSignal: this.abortSignalComponent.abortSignal,
-      operationFunction: (abortSignal) =>
-        new RenameHandler({
-          abortSignal,
-          app: this.app,
-          backlinkBatch: this.backlinkBatch,
-          handledRenames: this.handledRenames,
-          interruptedRenamesMap: this.interruptedRenamesMap,
-          linkUpdateProgressReporter: this.linkUpdateProgressReporter,
-          newPath,
-          oldCache,
-          oldPath,
-          oldPathBacklinksMap,
-          pluginNoticeComponent: this.pluginNoticeComponent,
-          resourceLockComponent: this.resourceLockComponent,
-          settingsManager: this.settingsManager
-        }).handle(),
+      operationFunction: async (abortSignal) => {
+        try {
+          await new RenameHandler({
+            abortSignal,
+            app: this.app,
+            backlinkBatch: this.backlinkBatch,
+            handledRenames: this.handledRenames,
+            interruptedRenamesMap: this.interruptedRenamesMap,
+            linkUpdateProgressReporter: this.linkUpdateProgressReporter,
+            newPath,
+            oldCache,
+            oldPath,
+            oldPathBacklinksMap,
+            pluginNoticeComponent: this.pluginNoticeComponent,
+            renameJournalCursor,
+            resourceLockComponent: this.resourceLockComponent,
+            settingsManager: this.settingsManager
+          }).handle();
+        } finally {
+          renameJournalCursor.dispose();
+        }
+      },
       operationName: `Handle rename: ${oldPath} -> ${newPath}`
     });
   }
