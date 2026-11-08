@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 3.5.1
+
+Canvas text nodes keep their links when several embedded attachments are renamed, and attachments and links now follow renames that overlap.
+
+### Fixed
+
+- Renaming a canvas whose text nodes embed several attachments no longer breaks the text: every link in a node is rewritten in one pass, so tables and following links stay intact ([#10](https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/issues/10)).
+- A note's attachments now move when `Folder notes` renames the note's folder while the note's own rename is still being processed ([#11](https://github.com/mnaoumov/obsidian-advanced-rename-and-delete-handler/issues/11)).
+- A note that links a renamed file and is itself renamed while that rename is still being processed now has its links updated at its new path.
+- Settings changed externally, for example by a sync tool, are no longer written back on reload, so two synced devices stop rewriting each other's `data.json`.
+
 ## 3.5.0
 
 Other plugins can now observe bulk moves, and a failed batch no longer leaves links broken.
