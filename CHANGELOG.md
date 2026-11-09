@@ -29,149 +29,223 @@ Other plugins can now observe bulk moves, and a failed batch no longer leaves li
 
 ## 3.4.0
 
-- fix(api): find moveMany's affected notes through the backlink index
-- feat(empty-folders): opt into the rmdir guard
-- feat(api): publish moveMany and runInBatch
-- feat(rename): rewrite broken HTML paths and warn about paths left in settings
+This release has 3 new features and 1 fix.
+
+### New
+
+- **empty-folders:** opt into the rmdir guard
+- **api:** publish moveMany and runInBatch
+- **rename:** rewrite broken HTML paths and warn about paths left in settings
+
+### Fixed
+
+- **api:** find moveMany's affected notes through the backlink index
 
 ## 3.3.0
 
-- perf(rename): narrow rename link snapshots and move many files at once
+This release has 1 improvement.
+
+### Improved
+
+- **rename:** narrow rename link snapshots and move many files at once
 
 ## 3.2.0
 
-- docs(readme): point bug reports at the Report a bug command
-- docs: add issue-filing instructions for AI agents
-- feat: add a Report a bug command
-- chore(github): give the bug form the field ids bug-report links prefill
-- build(deps): float `obsidian-dev-toolkit` to ^7.4.0 and override re2js past GHSA-gg6h-894w-4m9c
-- build(deps): bump @mnaoumov/obsidian-lib to ^10.1.0 and adopt its Reference API names
-- build(deps): bump `obsidian-dev-toolkit` to ^7.1.1 and `typescript-dev-toolkit` to ^5.1.0
-- chore: adopt readonly interface members
-- docs(readme): combine related resources and plugin comparisons
+This release has 1 new feature and 3 documentation changes. 5 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### New
+
+- add a Report a bug command
+
+### Documentation
+
+- **readme:** point bug reports at the Report a bug command
+- add issue-filing instructions for AI agents
+- **readme:** combine related resources and plugin comparisons
 
 ## 3.1.1
 
-- refactor: group src into subject folders
-- docs: cut the README down to a landing page, detail moved into docs/
-- fix(rename): keep a folder note's folder name as its link caption
+This release has 1 fix and 1 documentation change. 1 maintenance commit (tests, build, CI, refactoring, dependencies) is not listed.
+
+### Fixed
+
+- **rename:** keep a folder note's folder name as its link caption
+
+### Documentation
+
+- cut the README down to a landing page, detail moved into docs/
 
 ## 3.1.0
 
-- docs(readme): add a Similar plugins section
-- feat: re #8
-- test: save staged vault settings in every attachment-moving suite
-- test: stop vault settings leaking between integration suites
-- test: re #6
+This release has 1 new feature and 1 documentation change. 3 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### New
+
+- \[FR\] Setting to turn off the "Updated N links in M files." notice (#8)
+
+### Documentation
+
+- **readme:** add a Similar plugins section
 
 ## 3.0.1
 
-- test(canvas): stop counting Obsidian's handed-back canvas write as the plugin's
-- fix(demo-vault): keep one `CodeScript Toolkit` minVersion, the 15.0.0 floor
-- test(demo-vault): floor `CodeScript Toolkit` at 15.0.0
-- style: format the multi-link property integration test so the gate passes
-- docs: name `obsidian-lib` where comments said dev-utils
-- docs: shorten the debugging section
-- docs(changelog): name the issue each released entry resolved
-- fix: update every link inside a multi-link frontmatter value on rename
-- docs: point the remaining `obsidian-dev-utils` mentions at `obsidian-lib`
-- docs(readme): lead the Debugging section with `Advanced Debug Mode`
-- test(canvas-link-update-prompt): keep alwaysUpdateLinks off for the whole move, or say it was not
-- test(rename-link-update): report which part stalled when the link stays stale
+This release has 2 fixes and 5 documentation changes. 5 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### Fixed
+
+- **demo-vault:** keep one `CodeScript Toolkit` minVersion, the 15.0.0 floor
+- update every link inside a multi-link frontmatter value on rename
+
+### Documentation
+
+- name `obsidian-lib` where comments said dev-utils
+- shorten the debugging section
+- **changelog:** name the issue each released entry resolved
+- point the remaining `obsidian-dev-utils` mentions at `obsidian-lib`
+- **readme:** lead the Debugging section with `Advanced Debug Mode`
 
 ## 3.0.0
 
-- build(deps): clear the brace-expansion, sharp and fast-uri advisories
-- test(rename-link-update): wait for the metadata cache to re-parse the rewritten link
-- test(delete-empty-folders): wait for the sweep to pass the fixture before teardown
-- feat(settings)!: match path entries case-insensitively, as globs or flagged regular expressions
-- docs: mark plugin names as code
-- test(android): rely on the harness's write-loss guard
-- build(deps): bump @mnaoumov/obsidian-lib to 4.3.0
+This release has 1 breaking change and 1 documentation change. 5 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### Breaking changes
+
+- **settings:** match path entries case-insensitively, as globs or flagged regular expressions
+
+### Documentation
+
+- mark plugin names as code
 
 ## 2.3.0
 
-- test(android): re-write files the emulator writes as empty
-- refactor(api-contract): merge building the contract guards from `typescript-lib` 1.3.0
-- fix(rename): merge rewriting a folder's links past a note with unparseable frontmatter
-- chore(github): point questions to Discussions from the new-issue page
-- feat(delete): add shouldDeleteEmptyNoteFolders, off by default
-- ci: merge attesting release assets through the toolkit's reusable workflow
-- build(demo-vault): require `CodeScript Toolkit` 13.8.0 for the `obsidian-lib` demo script
+This release has 1 new feature and 1 fix. 5 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### New
+
+- **delete:** add shouldDeleteEmptyNoteFolders, off by default
+
+### Fixed
+
+- **rename:** merge rewriting a folder's links past a note with unparseable frontmatter
 
 ## 2.2.1
 
-- refactor(demo-vault): merge importing configureCommunityPlugin from @mnaoumov/obsidian-lib
+This release has maintenance changes only. 1 maintenance commit (tests, build, CI, refactoring, dependencies) is not listed.
 
 ## 2.2.0
 
-- build(deps): merge moving off `obsidian-dev-utils` onto the @mnaoumov packages
-- refactor(api): merge building the API contract on @mnaoumov/typescript-lib/api-contract
-- feat(api): merge shipping the API contract as a copyable api-contract.ts
-- fix(ui): merge showing plugin names as code
-- test: merge using the `obsidian-typings` declarations of Obsidian internals
+This release has 1 new feature and 1 fix. 3 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### New
+
+- **api:** merge shipping the API contract as a copyable api-contract.ts
+
+### Fixed
+
+- **ui:** merge showing plugin names as code
 
 ## 2.1.2
 
-- fix(rename): move a shared attachment with the last of its notes (re #5 - Batch-moving all referencing notes leaves shared attachments behind)
+This release has 1 fix.
+
+### Fixed
+
+- **rename:** move a shared attachment with the last of its notes (re #5 - Batch-moving all referencing notes leaves shared attachments behind)
 
 ## 2.1.1
 
-- test(screenshots): merge setting the dark theme through applyObsidianTheme
-- test(android): verify the stub plugin writes in the manifest suites
-- chore(deps): take `obsidian-dev-utils` 107.2.0
-- refactor(backlinks): drop the local backlink index for the library one
-- fix(rename): recognize `Advanced Metadata Cache` in the canvas gate
+This release has 1 fix. 4 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### Fixed
+
+- **rename:** recognize `Advanced Metadata Cache` in the canvas gate
 
 ## 2.1.0
 
-- feat(settings): *Treat as attachment extensions* accepts `property:name` and `property:name=value` entries, matched against a note's frontmatter, so an `Excalidraw` drawing saved as a plain `.md` is an attachment by its `excalidraw-plugin` property (`Custom Attachment Location` #90). The default is now `.excalidraw.md` plus `property:excalidraw-plugin`. **A list you already have saved is not changed:** to get the new behaviour, add `property:excalidraw-plugin` on its own line in the settings tab. A property entry matches a file only once Obsidian has indexed it.
-- fix(conflicts): stop warning about *Delete empty folders* on `Consistent Attachments and Links` 4.1.0, which no longer offers that command.
-- chore(deps): `obsidian-dev-utils` 107.1.0 and `obsidian-integration-testing` 17.
+This release has 1 new feature and 1 fix. 1 maintenance commit (tests, build, CI, refactoring, dependencies) is not listed.
+
+### New
+
+- **settings:** *Treat as attachment extensions* accepts `property:name` and `property:name=value` entries, matched against a note's frontmatter, so an `Excalidraw` drawing saved as a plain `.md` is an attachment by its `excalidraw-plugin` property (`Custom Attachment Location` #90). The default is now `.excalidraw.md` plus `property:excalidraw-plugin`. **A list you already have saved is not changed:** to get the new behaviour, add `property:excalidraw-plugin` on its own line in the settings tab. A property entry matches a file only once Obsidian has indexed it.
+
+### Fixed
+
+- **conflicts:** stop warning about *Delete empty folders* on `Consistent Attachments and Links` 4.1.0, which no longer offers that command.
 
 ## 2.0.0
+
+This release has 2 new features, 4 fixes, 2 improvements and 3 other changes.
+
+### New
+
+- the settings tab lists the plugins that depend on this one.
+- warn when `Consistent Attachments and Links` 4.x also offers the Delete empty folders command.
+
+### Fixed
+
+- **ui:** tell same-named notes apart on the rescue dialog's buttons (#1).
+- **rename:** a canvas whose text `node` embeds an attachment no longer holds the operation queue forever when moved.
+- **rename:** link updates in canvases are applied without the *Update links* prompt while rename handling is on.
+- **screenshots:** the store screenshots no longer show a toast or the note title twice.
+
+### Improved
+
+- **rename:** renaming a folder of notes no longer walks the whole vault twice per renamed file.
+- **delete:** folder deletion answers its backlink checks from an index instead of walking the vault.
+
+### Other changes
 
 - **Breaking:** every behaviour is now off by default, including handling renames and renaming the attachment folder. Installing the plugin no longer changes how a vault behaves. A setting already saved keeps its value, but a behaviour you relied on as a 1.x default without ever saving it is now off: turn it back on in the settings tab. A one-time notice on first load says so.
 - **Breaking:** when a conflicting plugin version is installed, this plugin stays enabled but inert and explains why in its settings tab, instead of disabling itself. It resumes as soon as the conflict is gone, with no restart.
 - **Breaking (API):** the `api` getter on the plugin instance is removed. The API is published only through the plugin API registry, and its types are declared in the root `api.d.ts`.
-- feat: the settings tab lists the plugins that depend on this one.
-- feat: warn when `Consistent Attachments and Links` 4.x also offers the Delete empty folders command.
-- fix(ui): tell same-named notes apart on the rescue dialog's buttons (#1).
-- fix(rename): a canvas whose text `node` embeds an attachment no longer holds the operation queue forever when moved.
-- fix(rename): link updates in canvases are applied without the *Update links* prompt while rename handling is on.
-- perf(rename): renaming a folder of notes no longer walks the whole vault twice per renamed file.
-- perf(delete): folder deletion answers its backlink checks from an index instead of walking the vault.
-- fix(screenshots): the store screenshots no longer show a toast or the note title twice.
 
 ## 1.3.0
 
+This release has 3 new features, 2 documentation changes and 1 other change. 2 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### New
+
+- add a manual vault-wide Delete empty folders command
+- **rescue:** keep a designated attachment unit folder whole on delete
+- **rescue:** ask which note adopts a tied attachment, instead of stalling
+
+### Documentation
+
+- **agents:** anchor the replayFolderDeletion reference to a symbol, not a line
+- **agents:** correct the deviation note, and drop the dead field it would have documented
+
+### Other changes
+
 - **Behaviour change:** `rescueAttachmentUsedByMultipleNotesMode` now defaults to `Prompt`. Users who already enabled *Should rescue shared attachments* are asked which note adopts a tied attachment, instead of the rescue silently stalling.
-- docs(agents): anchor the replayFolderDeletion reference to a symbol, not a line
-- docs(agents): correct the deviation note, and drop the dead field it would have documented
-- test(screenshots-desktop-capture): restore the settings-panel store screenshot
-- test(canvas-partial-write-guard): drop the Cancel-click workaround and fix the race it hid
-- feat: add a manual vault-wide Delete empty folders command
-- feat(rescue): keep a designated attachment unit folder whole on delete
-- feat(rescue): ask which note adopts a tied attachment, instead of stalling
 
 ## 1.2.0
 
-- chore(deps): sweep onto `obsidian-dev-utils` 98, integration-testing 12 and test-mocks 5
-- test(rename-delete): adopt the regression suites the attachment plugin hands over
-- test(bulk-delete): port the `Consistent Attachments and Links` performance suite onto the handler that owns the cost
-- test(rename-delete-handler): land the runAsyncLinkUpdate suppression guards
-- feat(api): read the handed-over settings back, at contract 1.1.0
-- fix(build): wire build:compile to buildCompile and drop the duplicate leaf script
+This release has 1 new feature and 1 fix. 4 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### New
+
+- **api:** read the handed-over settings back, at contract 1.1.0
+
+### Fixed
+
+- **build:** wire build:compile to buildCompile and drop the duplicate leaf script
 
 ## 1.1.1
 
-- chore(deps): sweep caret-ranged dependencies to latest
-- fix(deps): move to `obsidian-integration-testing` 11 and `obsidian-dev-utils` 96.5.2
-- fix(deps): drop the brace-expansion file: override that breaks a clean install
+This release has 2 fixes. 1 maintenance commit (tests, build, CI, refactoring, dependencies) is not listed.
+
+### Fixed
+
+- **deps:** move to `obsidian-integration-testing` 11 and `obsidian-dev-utils` 96.5.2
+- **deps:** drop the brace-expansion file: override that breaks a clean install
 
 ## 1.1.0
 
-- feat(api): offer a consumer's settings for review through migrateSettings
+This release has 1 new feature.
+
+### New
+
+- **api:** offer a consumer's settings for review through migrateSettings
 
 ## 1.0.0
 
