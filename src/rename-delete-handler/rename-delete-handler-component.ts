@@ -1765,8 +1765,8 @@ class RenameMap {
     }
   }
 
-  public get(oldPath: string): string | undefined {
-    return this.map.get(oldPath);
+  public get(oldPath: string): null | string {
+    return this.map.get(oldPath) ?? null;
   }
 
   public initBacklinksMap(params: RenameMapInitBacklinksMapParams): void {
