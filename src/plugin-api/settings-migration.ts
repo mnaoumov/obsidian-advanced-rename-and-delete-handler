@@ -357,7 +357,7 @@ export function readMigratableSetting(settings: ReadonlyPluginSettings<PluginSet
  * @returns The member, or `null` when the string names none.
  */
 export function toEmptyFolderBehaviorOrNull(value: string): EmptyFolderBehavior | null {
-  return getEmptyFolderBehaviorByName(value) ?? null;
+  return getEmptyFolderBehaviorByName(value);
 }
 
 function checkBoolean(propertyName: MigratableSettingPropertyName, settingValue: MigratableSettingValue): boolean {
@@ -369,8 +369,8 @@ function checkBoolean(propertyName: MigratableSettingPropertyName, settingValue:
 }
 
 function ensureEmptyFolderBehavior(propertyName: MigratableSettingPropertyName, settingValue: MigratableSettingValue): EmptyFolderBehavior {
-  const emptyFolderBehavior = typeof settingValue === 'string' ? getEmptyFolderBehaviorByName(settingValue) : undefined;
-  if (emptyFolderBehavior === undefined) {
+  const emptyFolderBehavior = typeof settingValue === 'string' ? getEmptyFolderBehaviorByName(settingValue) : null;
+  if (emptyFolderBehavior === null) {
     throw new TypeError(`Setting "${propertyName}" expects an empty folder behavior, got ${JSON.stringify(settingValue)}`);
   }
 
@@ -385,8 +385,8 @@ function ensureStringList(propertyName: MigratableSettingPropertyName, settingVa
   return [...settingValue];
 }
 
-function getEmptyFolderBehaviorByName(name: string): EmptyFolderBehavior | undefined {
-  return isApiEmptyFolderBehavior(name) ? EMPTY_FOLDER_BEHAVIOR_BY_API_NAME[name] : undefined;
+function getEmptyFolderBehaviorByName(name: string): EmptyFolderBehavior | null {
+  return isApiEmptyFolderBehavior(name) ? EMPTY_FOLDER_BEHAVIOR_BY_API_NAME[name] : null;
 }
 
 function isApiEmptyFolderBehavior(name: string): name is ApiEmptyFolderBehavior {
