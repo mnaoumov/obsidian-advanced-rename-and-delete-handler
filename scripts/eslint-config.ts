@@ -2,8 +2,14 @@ import { defineEslintConfigs } from '@mnaoumov/obsidian-dev-toolkit/linters/esli
 import { defineConfig } from 'eslint/config';
 
 export const configs = defineEslintConfigs({
-  customConfigs() {
+  customConfigs(context) {
     return defineConfig([
+      {
+        files: context.allFiles(),
+        rules: {
+          'typescript-dev-toolkit/no-undefined-return-type': 'error'
+        }
+      },
       {
         files: ['src/**/*.integration.test.ts', 'src/**/*.integration-helper.ts'],
         rules: {
