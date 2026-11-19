@@ -249,4 +249,16 @@ This release has 1 new feature.
 
 ## 1.0.0
 
-- Initial release
+First release: one plugin owns rename and delete handling for the whole vault, so links and attachments follow a note instead of being left behind.
+
+### New
+
+- Links follow a renamed or moved note, including link text that showed the old file name; a link with its own display text is left alone.
+- Attachments move with the note that owns them, folder and all, when it is renamed or moved.
+- Deleting a note can also delete the attachments only that note used and the folder it leaves empty. Both are off by default.
+- An attachment two notes share is never deleted with one of them, and can be moved to the note that still uses it.
+- Files ending in `.excalidraw.md`, and any other endings you add, count as attachments rather than notes.
+- Include and exclude path lists limit the plugin to part of the vault.
+- The settings tab groups each option under the event it answers to: rename or delete.
+- The plugin refuses to run while another installed plugin still carries its own rename and delete handler, names the plugins to update, and starts once they are.
+- A demo vault documents every feature, with buttons that perform each rename or deletion and show the result.
