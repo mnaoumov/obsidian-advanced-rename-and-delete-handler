@@ -6,7 +6,6 @@
 
 import type { AbortSignalComponent } from '@mnaoumov/obsidian-lib/components/abort-signal-component';
 import type { PluginNoticeComponent } from '@mnaoumov/obsidian-lib/components/plugin-notice-component';
-import type { FileChange } from '@mnaoumov/obsidian-lib/file-change';
 import type {
   BacklinkConversionParams,
   EditBacklinksSnapshotParams,
@@ -42,7 +41,6 @@ import { iterateReferencesAffectedByRename } from '@mnaoumov/obsidian-lib/backli
 import { getCanvasReferences } from '@mnaoumov/obsidian-lib/canvas';
 import { ComponentEx } from '@mnaoumov/obsidian-lib/components/component-ex';
 import { MonkeyAroundComponent } from '@mnaoumov/obsidian-lib/components/monkey-around-component';
-import { applyFileChanges } from '@mnaoumov/obsidian-lib/file-change';
 import { waitForPendingLinkUpdates } from '@mnaoumov/obsidian-lib/file-manager';
 import {
   CANVAS_FILE_EXTENSION,
@@ -78,8 +76,8 @@ import {
   flushQueue
 } from '@mnaoumov/obsidian-lib/queue';
 import {
-  isCanvasTextNodeReference,
-  referenceToFileChange
+  isCanvasFileNodeReference,
+  isCanvasTextNodeReference
 } from '@mnaoumov/obsidian-lib/reference';
 import { isResourceLockedForPathByAncestor } from '@mnaoumov/obsidian-lib/resource-lock';
 import {
@@ -271,16 +269,6 @@ interface DidRescueStillUsedAttachmentParams {
   readonly rescueParams: RescueStillUsedFileParams;
   readonly rootFolderPath: string;
   readonly settingsManager: SettingsManager;
-}
-
-interface EditCanvasBacklinksParams {
-  readonly abortSignal: AbortSignal;
-  readonly app: App;
-  readonly canvasPath: string;
-  readonly linkKeyToPathMap: Map<string, string>;
-  readonly pluginNoticeComponent: PluginNoticeComponent;
-  readonly referenceConverter: (params: BacklinkConversionParams<string>) => string | undefined;
-  readonly resourceLockComponent: null | ResourceLockComponent;
 }
 
 interface EditRenameBacklinksParams {
@@ -1023,7 +1011,7 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
    * and awaits it, so a move this handler made, such as an attachment that a canvas embeds, asked about a file the
    * user never moved, and this plugin's serial queue waited behind the answer. With `shouldHandleRenames` on, the
    * handler already rewrites every other link without asking, so these get the same treatment. Only the entries
-   * whose target is a canvas come here: a canvas that holds a link is rewritten by `editCanvasBacklinks`.
+   * whose target is a canvas come here: a canvas that holds a link is rewritten in `editRenameBacklinks`.
    *
    * In the 1.14.2 bundle `updateAllLinks` reads the setting synchronously, before its first `await`, so it
    * answers `true` only while that synchronous part runs, and no other reader in the app sees the change. If a
@@ -1184,7 +1172,7 @@ class FileManagerRunAsyncLinkUpdatePatchComponent extends MonkeyAroundComponent 
         }
 
         /*
-         * A canvas holding the link is rewritten by the handler itself, in `editCanvasBacklinks`. Obsidian's canvas
+         * A canvas holding the link is rewritten by the handler itself, in `editRenameBacklinks`. Obsidian's canvas
          * updater would apply this rename's offsets to a text node an earlier rename has already rewritten.
          */
         if (
@@ -2522,77 +2510,6 @@ async function didRescueStillUsedAttachment(params: DidRescueStillUsedAttachment
 }
 
 /**
- * Rewrites, in one canvas, the text-node links its snapshot names, in a single write.
- *
- * The library's `editBacklinksSnapshot` reads a holder's links from the metadata cache, which holds none for a
- * canvas, so it rewrites nothing there. Handing the canvas back to Obsidian's own canvas link updater instead
- * breaks a text node that embeds several renamed files: that updater applies each rename's offsets, taken from
- * its canvas index when the rename started, to the text as it is now. When one note rename moves several
- * attachments, the index has not re-read the canvas between them, so every rewrite after the first in a node
- * lands where the previous one shifted the text, and tables and links break (issue #10). This reads the links
- * from the content it rewrites, so every offset is current, and applies them all at once.
- *
- * File nodes are left alone: Obsidian's canvas plugin re-points a file node at a moved file by itself, and a
- * file node that already moved would make the library refuse the whole rewrite as a content mismatch.
- *
- * @param params - The canvas, the links to rewrite in it, and how to rewrite each one.
- */
-async function editCanvasBacklinks(params: EditCanvasBacklinksParams): Promise<void> {
-  const { app, canvasPath, linkKeyToPathMap, referenceConverter } = params;
-  /*
-   * The library re-serializes a canvas whenever it applies changes, even none, so a canvas whose text nodes hold
-   * none of the snapshot's links is not opened at all.
-   */
-  const initialReferences = await getCanvasReferences(app, canvasPath);
-  if (initialReferences.every((reference) => !isCanvasTextNodeReference(reference) || !linkKeyToPathMap.has(getLinkIdentityKey(reference)))) {
-    return;
-  }
-
-  await applyFileChanges({
-    abortSignal: params.abortSignal,
-    app,
-    async changesProvider({ abortSignal, content }): Promise<FileChange[] | null> {
-      const file = getFileOrNull({ app, pathOrFile: canvasPath });
-      if (!file) {
-        return [];
-      }
-
-      // The references are read from the file, so they describe `content` only while the two agree. A `null` retries.
-      if (await app.vault.cachedRead(file) !== content) {
-        return null;
-      }
-
-      const references = await getCanvasReferences(app, file);
-      abortSignal.throwIfAborted();
-      const changes: FileChange[] = [];
-      for (const reference of references) {
-        if (!isCanvasTextNodeReference(reference)) {
-          continue;
-        }
-
-        const newContent = referenceConverter({
-          payload: linkKeyToPathMap.get(getLinkIdentityKey(reference)),
-          reference,
-          sourcePath: canvasPath
-        });
-        abortSignal.throwIfAborted();
-        if (newContent === undefined) {
-          continue;
-        }
-
-        changes.push(referenceToFileChange(reference, newContent));
-      }
-
-      return changes;
-    },
-    pathOrFile: canvasPath,
-    pluginNoticeComponent: params.pluginNoticeComponent,
-    resourceLockComponent: params.resourceLockComponent,
-    shouldFailOnMissingFile: false
-  });
-}
-
-/**
  * Rewrites, in each linking note of `snapshot`, the links that pointed at a renamed file, so they point at its new
  * path. Used per rename, and once for a whole batch ({@link BacklinkBatch}).
  *
@@ -2602,10 +2519,13 @@ async function editRenameBacklinks(params: EditRenameBacklinksParams): Promise<v
   const renamedFilePaths = getObsidianLibState('renamedFilePaths', new Set<string>()).value;
   const renamedLinks = getObsidianLibState('renamedLinkPaths', new Set<string>()).value;
   const linkIndexes = new Map<string, number>();
-  const canvasSnapshot = new Map<string, Map<string, string>>();
-  const noteSnapshot = new Map<string, Map<string, string>>();
+  const snapshot = new Map<string, Map<string, string>>();
   for (const [backlinkPath, linkKeyToPathMap] of params.snapshot) {
-    (isCanvasFile(backlinkPath) ? canvasSnapshot : noteSnapshot).set(backlinkPath, linkKeyToPathMap);
+    if (isCanvasFile(backlinkPath) && !await shouldEditCanvasHolder(params.app, backlinkPath, linkKeyToPathMap)) {
+      continue;
+    }
+
+    snapshot.set(backlinkPath, linkKeyToPathMap);
   }
 
   await editBacklinksSnapshot(normalizeOptionalProperties<EditBacklinksSnapshotParams<string>>({
@@ -2619,27 +2539,18 @@ async function editRenameBacklinks(params: EditRenameBacklinksParams): Promise<v
     shouldFailOnMissingFile: false,
     // The converter logs every link it declines, so it has to be shown the ones the snapshot does not name.
     shouldVisitUnmatchedReferences: true,
-    snapshot: noteSnapshot
+    snapshot
   }));
 
-  if (canvasSnapshot.size === 0 || !params.app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas)) {
-    return;
-  }
-
-  // TODO: Pass canvases to `editBacklinksSnapshot` too, once `@mnaoumov/obsidian-lib` reads a canvas holder's links in `editReferences`.
-  for (const [canvasPath, linkKeyToPathMap] of canvasSnapshot) {
-    await editCanvasBacklinks({
-      abortSignal: params.abortSignal,
-      app: params.app,
-      canvasPath,
-      linkKeyToPathMap,
-      pluginNoticeComponent: params.pluginNoticeComponent,
-      referenceConverter,
-      resourceLockComponent: params.resourceLockComponent
-    });
-  }
-
   function referenceConverter({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }: BacklinkConversionParams<string>): string | undefined {
+    /*
+     * Obsidian's canvas plugin re-points a file node at a moved file by itself, so a canvas's file nodes are left to
+     * it. Rewriting one here would race that plugin; only the text nodes are this handler's to rewrite.
+     */
+    if (isCanvasFileNodeReference(reference)) {
+      return;
+    }
+
     const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
     linkIndexes.set(newBacklinkPath, linkIndex);
 
@@ -2888,6 +2799,29 @@ function restoreProperty($object: object, key: string, descriptor: PropertyDescr
   } else {
     Reflect.deleteProperty($object, key);
   }
+}
+
+/**
+ * Tells whether a canvas holder in a rename's backlinks snapshot is handed to `editBacklinksSnapshot`.
+ *
+ * The library rewrites a canvas holder's links from the content it rewrites, so every offset is current even when
+ * one note rename moves several attachments that a single text node embeds (issue #10). It re-serializes the canvas
+ * whenever it applies changes, even none, so a canvas whose text nodes hold none of the snapshot's links is not
+ * opened at all: its file nodes are Obsidian's canvas plugin's to re-point. Nothing is rewritten in a canvas while
+ * the core Canvas plugin is disabled.
+ *
+ * @param app - The Obsidian app instance.
+ * @param canvasPath - The canvas holder's path.
+ * @param linkKeyToPathMap - The holder's snapshot entry, keyed by {@link getLinkIdentityKey}.
+ * @returns Whether the canvas has a text-node link to rewrite.
+ */
+async function shouldEditCanvasHolder(app: App, canvasPath: string, linkKeyToPathMap: Map<string, string>): Promise<boolean> {
+  if (!app.internalPlugins.getEnabledPluginById(InternalPluginName.Canvas)) {
+    return false;
+  }
+
+  const references = await getCanvasReferences(app, canvasPath);
+  return references.some((reference) => isCanvasTextNodeReference(reference) && linkKeyToPathMap.has(getLinkIdentityKey(reference)));
 }
 
 /* v8 ignore stop */

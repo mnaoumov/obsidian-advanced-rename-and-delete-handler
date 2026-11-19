@@ -23,7 +23,7 @@ import {
  * file?* and awaits an answer. So moving a canvas raised that prompt about the ATTACHMENT the handler moved with
  * it, a file the user never touched, and until somebody answered, the attachment's `renameFile` did not return
  * and every later rename or delete waited behind it in this plugin's serial queue. The handler now rewrites a
- * canvas holder's links itself (`editCanvasBacklinks`), and the links that only TARGET a canvas, still handed
+ * canvas holder's links itself (`editRenameBacklinks`), and the links that only TARGET a canvas, still handed
  * back, are applied without the prompt (`updateAllLinksWithoutPrompt`), both in
  * `src/rename-delete-handler/rename-delete-handler-component.ts`. The text node pins that the canvas is still
  * updated, by whichever of the two.
