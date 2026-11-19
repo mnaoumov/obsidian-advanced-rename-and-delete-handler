@@ -155,7 +155,7 @@ export async function writePluginSettings(snapshot: PluginSettingsSnapshot): Pro
        * answered — turning one reported failure into a hook timeout that names nothing. Say what happened
        * instead.
        */
-      if (document.querySelector('.modal-container')) {
+      if (activeDocument.querySelector('.modal-container')) {
         throw new Error('a modal was left open by a failing test, so the settings snapshot was not restored');
       }
 
@@ -179,11 +179,11 @@ export async function writePluginSettings(snapshot: PluginSettingsSnapshot): Pro
 
       await waitUntil({
         message: 'the settings dialog opens, or the snapshot turns out to match what is already there',
-        predicate: () => isSettled || document.querySelector('.modal-container') !== null,
+        predicate: () => isSettled || activeDocument.querySelector('.modal-container') !== null,
         timeoutInMilliseconds: waitTimeoutInMilliseconds
       });
 
-      const modalEl = document.querySelector('.modal-container');
+      const modalEl = activeDocument.querySelector('.modal-container');
       if (modalEl) {
         const okButton = [...modalEl.querySelectorAll('button')].find((button) => button.textContent === 'OK');
         if (!okButton) {
