@@ -2186,13 +2186,13 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
         referenceConverter: (reference) => {
           const { linkPath } = splitSubpath(reference.link);
           if (!linkPath || this.app.metadataCache.getFirstLinkpathDest(linkPath, currentPath)) {
-            return;
+            return null;
           }
           const oldTargetPath = join(dirname(originalPath), linkPath);
           const newTargetPath = [backlinkBatch.resolve(oldTargetPath), backlinkBatch.resolve(`${oldTargetPath}.md`)]
             .find((path) => getFileOrNull({ app: this.app, pathOrFile: path }) !== null);
           if (!newTargetPath) {
-            return;
+            return null;
           }
           return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
             app: this.app,
@@ -2390,7 +2390,7 @@ export class RenameDeleteHandlerComponent extends ComponentEx {
       referenceConverter: (reference) => {
         const oldTargetPath = linkTargets.get(getReferenceKey(reference));
         if (oldTargetPath === undefined) {
-          return;
+          return null;
         }
         return updateLink(normalizeOptionalProperties<UpdateLinkParams>({
           app: this.app,
@@ -2542,13 +2542,13 @@ async function editRenameBacklinks(params: EditRenameBacklinksParams): Promise<v
     snapshot
   }));
 
-  function referenceConverter({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }: BacklinkConversionParams<string>): string | undefined {
+  function referenceConverter({ payload: oldAttachmentPath, reference, sourcePath: newBacklinkPath }: BacklinkConversionParams<string>): null | string {
     /*
      * Obsidian's canvas plugin re-points a file node at a moved file by itself, so a canvas's file nodes are left to
      * it. Rewriting one here would race that plugin; only the text nodes are this handler's to rewrite.
      */
     if (isCanvasFileNodeReference(reference)) {
-      return;
+      return null;
     }
 
     const linkIndex = (linkIndexes.get(newBacklinkPath) ?? 0) + 1;
@@ -2565,7 +2565,7 @@ async function editRenameBacklinks(params: EditRenameBacklinksParams): Promise<v
       getLibDebugger('RenameDeleteHandler:updateBacklinks')(
         `No snapshot entry for link ${toJson(reference)} in ${newBacklinkPath}; leaving it unchanged.`
       );
-      return;
+      return null;
     }
 
     renamedFilePaths.add(newBacklinkPath);
