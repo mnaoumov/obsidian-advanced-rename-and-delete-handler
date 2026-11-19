@@ -42,6 +42,8 @@ async function loadComponentWith(loadData: () => Promise<unknown>): Promise<Plug
     app,
     dataHandler: strictProxy<DataHandler>({
       loadData,
+      // No device-local recovery copies: what is under test is loading and saving, not the recovery path.
+      recoveryStore: null,
       saveData
     }),
     pluginEventSource: strictProxy<PluginEventSource>({

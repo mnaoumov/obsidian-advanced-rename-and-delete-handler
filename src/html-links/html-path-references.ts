@@ -55,7 +55,7 @@ const PATH_ATTRIBUTE_REG_EXP = /\s(?:src|href)\s*=\s*(?<value>"[^"]*"|'[^']*'|[^
 const URL_SCHEME_REG_EXP = /^[a-z][a-z\d+.-]*:/i;
 const FRONTMATTER_REG_EXP = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
 const FENCE_OPEN_REG_EXP = /^ {0,3}(?<fence>`{3,}|~{3,})/;
-const INLINE_CODE_REG_EXP = /(?<ticks>`+)(?!`)[\s\S]*?(?<!`)\k<ticks>(?!`)/g;
+const INLINE_CODE_REG_EXP = /(?<ticks>`+)(?!`)(?:[^`]|(?!\k<ticks>(?!`))`+(?!`))*?\k<ticks>(?!`)/g;
 
 /**
  * A fence line may be indented by up to this many spaces and still open or close a code block.
