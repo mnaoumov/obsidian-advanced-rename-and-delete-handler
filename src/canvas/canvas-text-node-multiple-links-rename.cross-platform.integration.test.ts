@@ -54,6 +54,11 @@ interface PathHolder {
   readonly path: string;
 }
 
+// An entry of the canvas index's file queue, read only for the path a timed-out wait reports.
+interface QueuedFileLike {
+  readonly path?: string;
+}
+
 let originalSettings: PluginSettingsSnapshot;
 
 beforeAll(async () => {
@@ -176,11 +181,36 @@ describe('Renaming a canvas whose text nodes embed several attachments', () => {
             throw new Error('the Canvas core plugin is not enabled');
           }
 
-          await waitUntil({
-            message: 'Obsidian\'s canvas index holds the canvas',
-            predicate: () => canvasIndex.index[oldCanvasPath] !== undefined,
-            timeoutInMilliseconds: INDEX_TIMEOUT_IN_MILLISECONDS
-          });
+          /**
+           * Describes the canvas index's state, for a timed-out wait on it to report.
+           *
+           * @param index - Obsidian's canvas index.
+           * @param path - The canvas the wait expected the index to hold.
+           * @returns One line per fact: the entry, the queue, the animation frame, the vault, the disk and the metadata cache.
+           */
+          async function describeCanvasIndex(index: NonNullable<typeof canvasIndex>, path: string): Promise<string> {
+            const entry = index.index[path];
+            const queuedPaths = index.fileQueue.map((queued) => (queued as QueuedFileLike).path ?? String(queued));
+            const file = app.vault.getFileByPath(path);
+            const diskStat = await app.vault.adapter.stat(path);
+            return [
+              `canvas index: ${entry ? `holds ${path} with ${String(entry.embeds.length)} embed(s)` : `does not hold ${path}`}, ${String(Object.keys(index.index).length)} entries in all`,
+              `canvas index queue: ${queuedPaths.length > 0 ? queuedPaths.join(', ') : 'empty'}`,
+              `canvas index frame: ${String(index.frame)}`,
+              `vault: ${file ? `${path} indexed at ${String(file.stat.size)} bytes` : `${path} not in the vault`}`,
+              `disk: ${diskStat ? `${String(diskStat.size)} bytes` : 'no file'}`,
+              `metadata cache clean: ${String(app.metadataCache.isCacheClean())}`
+            ].join('\n');
+          }
+          try {
+            await waitUntil({
+              message: 'Obsidian\'s canvas index holds the canvas',
+              predicate: () => canvasIndex.index[oldCanvasPath] !== undefined,
+              timeoutInMilliseconds: INDEX_TIMEOUT_IN_MILLISECONDS
+            });
+          } catch (error) {
+            throw new Error(`${error instanceof Error ? error.message : String(error)}\n${await describeCanvasIndex(canvasIndex, oldCanvasPath)}`, { cause: error });
+          }
 
           await app.fileManager.renameFile(canvas, newCanvasPath);
 
