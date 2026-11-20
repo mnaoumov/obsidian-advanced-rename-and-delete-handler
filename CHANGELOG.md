@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 3.5.2
+
+This release has 1 fix and 2 documentation changes. 5 maintenance commits (tests, build, CI, refactoring, dependencies) are not listed.
+
+### Fixed
+
+- load again after an update or Hot Reload instead of failing on an already published API
+
+### Documentation
+
+- **changelog:** describe what 1.0.0 shipped
+- **changelog:** regroup the published release notes for readers
+
 ## 3.5.1
 
 Canvas text nodes keep their links when several embedded attachments are renamed, and attachments and links now follow renames that overlap.
